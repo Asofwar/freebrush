@@ -28,6 +28,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.asofwar.freebrush.ble.OcleanProtocol
 import dev.asofwar.freebrush.data.BrushSession
 import dev.asofwar.freebrush.data.Zones
 import java.time.LocalDate
@@ -135,6 +136,8 @@ fun PressureBar(pressure: List<Int>) {
     val colors = listOf(
         Color(0xFF9CC9E8), Color(0xFF5FA8D3), Color(0xFF2E9E6A), Color(0xFFE0A030), Color(0xFFD9534F),
     )
+    // Sessions stored before the placeholder was recognised still carry it.
+    if (pressure == OcleanProtocol.PLACEHOLDER_PRESSURE) return
     val total = pressure.sum().takeIf { it > 0 } ?: return
     Column {
         Text("Нажим: от слабого к сильному", style = MaterialTheme.typography.bodySmall)

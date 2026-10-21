@@ -165,29 +165,54 @@ class OcleanProtocolTest {
         assertNull(s.score)
     }
 
+    /** X Pro Digital (OCLEANY3PB), 2026-10-21: each fragment repeats the 0302 type. */
     @Test
-    fun settingsFramedAcrossNotifications() {
-        val data = ByteArray(34)
-        data[11] = 76
-        data[22] = 1
-        data[25] = 0; data[26] = 90
-        data[27] = 0; data[28] = 12
-        data[29] = 0; data[30] = 25
-        data[31] = 7
-        val payload = hex("0302") + byteArrayOf('#'.code.toByte(), (data.size + 2).toByte()) + data
+    fun xProDigitalSettings() {
         val asm = OcleanProtocol.SettingsAssembler()
-        assertNull(asm.feed(payload.copyOfRange(0, 20)))
-        assertNull(asm.feed(payload.copyOfRange(20, 30)))
-        val s = asm.feed(payload.copyOfRange(30, payload.size))
+        assertNull(asm.feed(hex("02014f4b")))
+        assertNull(asm.feed(hex("030223240c010101010200000c010101000200ea")))
+        val s = asm.feed(hex("03021a0a150f162100011100f000530090070001"))
         assertNotNull(s)
         s!!
-        assertEquals(76, s.schemeId)
-        assertTrue(s.overPressureAlert)
-        assertFalse(s.areaRemind)
-        assertEquals(90, s.headMaxTime)
-        assertEquals(12, s.headUsedDays)
-        assertEquals(25, s.headUsedTimes)
+        assertEquals(1, s.schemeId)
+        assertFalse(s.overPressureAlert)
+        assertTrue(s.areaRemind)
+        assertEquals(234, s.headUsedTime)
+        assertEquals(240, s.headMaxTime)
+        assertEquals(83, s.headUsedDays)
+        assertEquals(144, s.headUsedTimes)
         assertEquals(7, s.language)
+    }
+
+    /** X Pro Digital (OCLEANY3PB), 2026-10-21: status reply with battery 43 %. */
+    @Test
+    fun xProDigitalStatus() {
+        assertEquals(43, OcleanProtocol.parseStatusBattery(hex("0303020e9e2b1000")))
+    }
+
+    /** X Pro Digital (OCLEANY3PB), 2026-10-21: a record from a 32-record stream, re-split; placeholder pressure, UTC+3. */
+    @Test
+    fun xProDigitalRecord() {
+        val a = assemble(
+            "03072a422300011a0a0c0c0b320200b400420514",
+            "4b00000011000000000001020f0013010d030000",
+            "2f030300ffffffffff000000000000000000",
+        )
+        val s = OcleanProtocol.decodeRecord(a.records().single(), 14)!!
+        assertEquals(epoch(2026, 10, 12, 12, 11, 50, 3), s.epochSec)
+        assertEquals(180, s.tzOffsetMin)
+        assertEquals(2, s.schemeId)
+        assertEquals(180, s.plannedSec)
+        assertEquals(66, s.durationSec)
+        assertEquals(47, s.score)
+        assertEquals(listOf(1, 2, 15, 0, 19, 1, 13, 3), s.zones)
+        assertTrue(s.pressure.isEmpty())
+    }
+
+    @Test
+    fun hardwareRevision() {
+        assertEquals("HH 0013 0002", OcleanProtocol.formatHardware(hex("4848") + hex("00130002")))
+        assertEquals("Rev.D", OcleanProtocol.formatHardware("Rev.D".toByteArray() + byteArrayOf(0)))
     }
 
     @Test

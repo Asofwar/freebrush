@@ -35,7 +35,7 @@ class SyncResult(
     val firmware: String? = null,
     val hardware: String? = null,
     val battery: Int? = null,
-    val headDays: Int? = null,
+    val settings: OcleanProtocol.Settings? = null,
     val sessions: List<BrushSession> = emptyList(),
 )
 
@@ -99,7 +99,7 @@ class OcleanClient(private val context: Context) {
 
         val model = s.readText(DIS_SERVICE, DIS_MODEL)
         val firmware = s.readText(DIS_SERVICE, DIS_FIRMWARE)
-        val hardware = s.readText(DIS_SERVICE, DIS_HARDWARE)
+        val hardware = runCatching { OcleanProtocol.formatHardware(s.read(DIS_SERVICE, DIS_HARDWARE)) }.getOrNull()
         val software = s.readText(DIS_SERVICE, DIS_SOFTWARE)
         onStep("Модель $model, прошивка ${software ?: firmware}, железо $hardware")
         var battery = runCatching { s.read(BATTERY_SERVICE, BATTERY_LEVEL)[0].toInt() and 0xFF }.getOrNull()
@@ -137,7 +137,7 @@ class OcleanClient(private val context: Context) {
             firmware = software ?: firmware,
             hardware = hardware,
             battery = battery,
-            headDays = settings?.headUsedDays,
+            settings = settings,
             sessions = sessions,
         )
     }

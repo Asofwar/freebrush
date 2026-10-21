@@ -4,8 +4,8 @@ An open-source Android app for Oclean smart toothbrushes that works fully offlin
 It talks to the brush directly over Bluetooth Low Energy. You need no account and no cloud, and the
 app has no internet permission at all.
 
-> **Status: early alpha.** The app is being built and tested against the **Oclean X Pro Digital**
-> (`OCLEANY3PB`). Other models that share the same Bluetooth protocol may work, but nobody has
+> **Status: early alpha.** Syncing works on a real **Oclean X Pro Digital** (`OCLEANY3PB`,
+> firmware 1.0.2.5). Other models that share the same Bluetooth protocol may work, but nobody has
 > tested them yet. See [Supported brushes](#supported-brushes).
 
 [По-русски](#по-русски)
@@ -21,7 +21,8 @@ that is needed. FreeBrush reads the data straight from the brush and keeps it on
 
 | | FreeBrush | Official app |
 |---|---|---|
-| Brushing history: score, duration, zones, pressure | ✅ on the phone | ✅ in the cloud |
+| Brushing history: score, duration, zones, pressure¹ | ✅ on the phone | ✅ in the cloud |
+| Brush-head counters (days, sessions, wear) | ✅ | ✅ |
 | Works without an account | ✅ | ❌ |
 | Internet access | none (no `INTERNET` permission) | required |
 | Ads / splash banners | none | server-driven banner |
@@ -32,11 +33,16 @@ that is needed. FreeBrush reads the data straight from the brush and keeps it on
 | Firmware updates | ❌ never: firmware comes from the vendor's servers | ✅ |
 | Family accounts, "expert" reports, AI chat | ❌ | ✅ |
 
+¹ Only on brushes that log pressure. The X Pro Digital sends a fixed placeholder instead, so FreeBrush hides it.
+
+The brush keeps its last 32 sessions and overwrites the oldest ones. FreeBrush does not delete sessions from the
+brush, so sync at least every couple of weeks to keep the full history.
+
 ## Supported brushes
 
 | Model | Model ID | Status |
 |---|---|---|
-| Oclean X Pro Digital | `OCLEANY3PB` | in development, primary target |
+| Oclean X Pro Digital | `OCLEANY3PB` | ✅ sync confirmed (firmware 1.0.2.5): score, duration, zones, battery, brush-head counters |
 | Oclean X Pro Elite | `OCLEANY3P`, `OCLEANY3X` | same protocol, untested |
 | Oclean X / X Pro / X Pro 20 / X Ultra | `OCLEANY3M`, `OCLEANY3`, `OCLEANX20`, `OCLEANV1a` | same protocol family, untested |
 
@@ -105,8 +111,11 @@ FreeBrush — открытое Android-приложение для умных щ
 и облака: забирает данные со щётки по Bluetooth и хранит их только на телефоне. Разрешения на интернет
 у приложения нет.
 
-**Статус: ранняя альфа.** Приложение делается и проверяется на **Oclean X Pro Digital** (`OCLEANY3PB`).
-Другие модели с тем же протоколом могут работать, но не проверены.
+**Статус: ранняя альфа.** Синхронизация проверена на реальной **Oclean X Pro Digital** (`OCLEANY3PB`,
+прошивка 1.0.2.5). Другие модели с тем же протоколом могут работать, но не проверены.
+
+Щётка хранит последние 32 чистки и затирает самые старые. FreeBrush ничего со щётки не удаляет, поэтому
+синхронизируйся хотя бы раз в пару недель, чтобы история была полной.
 
 **Что умеет:**
 - История чисток: оценка, длительность, время по зонам, нажим.

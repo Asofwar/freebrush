@@ -79,7 +79,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                         firmware = result.firmware ?: info.firmware,
                         hardware = result.hardware ?: info.hardware,
                         battery = result.battery ?: info.battery,
-                        headDays = result.headDays ?: info.headDays,
+                        headDays = result.settings?.headUsedDays ?: info.headDays,
+                        headUses = result.settings?.headUsedTimes ?: info.headUses,
+                        headWear = result.settings?.headUsedTime ?: info.headWear,
+                        headWearMax = result.settings?.headMaxTime ?: info.headWearMax,
                         lastSyncMillis = System.currentTimeMillis(),
                     ),
                 )

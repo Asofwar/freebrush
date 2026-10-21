@@ -44,6 +44,12 @@ object OcleanProtocol {
     val CMD_ACK_SESSIONS = hex("0202")
 
     const val RECORD_SIZE = 42
+
+    /**
+     * Pressure buckets of brushes without a pressure log: X Pro Digital and Oclean X send this same value in every
+     * record, so it carries no information.
+     */
+    val PLACEHOLDER_PRESSURE = listOf(5, 20, 75, 0, 0)
     private val STREAM_HEADER = hex("03072a4223") // "0307" + ASCII "*B#"
 
     /** UTC offsets in minutes; the brush stores a 1-based index into this table. */
@@ -70,6 +76,17 @@ object OcleanProtocol {
         tzIndex(now.offset.totalSeconds / 60).toByte(),
     )
 
+    /**
+     * Hardware revision: either plain text, or ASCII "HH" followed by binary protocol and OTA codes,
+     * shown here as hex (for example "HH 0013 0002").
+     */
+    fun formatHardware(raw: ByteArray): String? {
+        if (raw.size >= 6 && raw[0] == 'H'.code.toByte() && raw[1] == 'H'.code.toByte()) {
+            return "HH " + raw.copyOfRange(2, 4).toHex() + " " + raw.copyOfRange(4, raw.size).toHex()
+        }
+        return raw.toString(Charsets.US_ASCII).trimEnd('\u0000', ' ').ifEmpty { null }
+    }
+
     /** Ack of a command: the command id followed by ASCII "OK". */
     fun isAck(packet: ByteArray, command: ByteArray): Boolean =
         packet.size == 4 && packet[0] == command[0] && packet[1] == command[1] &&
@@ -88,15 +105,19 @@ object OcleanProtocol {
         val schemeId: Int,
         val overPressureAlert: Boolean,
         val areaRemind: Boolean,
+        /** Days since the brush head was last reset. */
         val headUsedDays: Int,
+        /** Sessions since the brush head was last reset. */
         val headUsedTimes: Int,
+        /** Brush-head wear counter and its limit; the unit is not known yet (minutes are likely). */
+        val headUsedTime: Int,
         val headMaxTime: Int,
         val language: Int,
     )
 
     /**
-     * Collects the `0302` settings reply. The first notification carries `03 02 '#' L`, where L-2 is the data length;
-     * further notifications are raw continuation bytes. Packets without the `#` marker are taken as unframed data.
+     * Collects the `0302` settings reply. Every notification starts with the `03 02` type; the first one then
+     * carries `'#' L`, where L-2 is the data length. Replies without the `#` marker are taken as unframed data.
      */
     class SettingsAssembler {
         private var buffer: ByteArray? = null
@@ -104,19 +125,19 @@ object OcleanProtocol {
 
         /** Returns the settings once the reply is complete; null while more bytes are needed or the packet is unrelated. */
         fun feed(packet: ByteArray): Settings? {
+            if (!hasType(packet, TYPE_SETTINGS)) return null
+            val body = packet.copyOfRange(2, packet.size)
             val current = buffer
-            if (hasType(packet, hex("0302")) && current == null) {
-                if (packet.size >= 4 && packet[2] == '#'.code.toByte()) {
-                    expected = packet.u8(3) - 2
-                    buffer = packet.copyOfRange(4, packet.size)
+            if (current == null) {
+                if (body.size >= 2 && body[0] == '#'.code.toByte()) {
+                    expected = body.u8(1) - 2
+                    buffer = body.copyOfRange(2, body.size)
                 } else {
                     expected = SETTINGS_SIZE
-                    buffer = packet.copyOfRange(2, packet.size)
+                    buffer = body
                 }
-            } else if (current != null) {
-                buffer = current + packet
             } else {
-                return null
+                buffer = current + body
             }
             val data = buffer!!
             if (data.size < expected || data.size < SETTINGS_SIZE) return null
@@ -126,11 +147,13 @@ object OcleanProtocol {
     }
 
     private const val SETTINGS_SIZE = 34
+    private val TYPE_SETTINGS = hex("0302")
 
     fun decodeSettings(d: ByteArray): Settings = Settings(
         schemeId = d.u8(11),
         overPressureAlert = d.u8(22) != 0,
         areaRemind = d.u8(23) != 0,
+        headUsedTime = d.u16(14),
         headMaxTime = d.u16(25),
         headUsedDays = d.u16(27),
         headUsedTimes = d.u16(29),
@@ -197,7 +220,7 @@ object OcleanProtocol {
             score = if (rawScore == 0xFF) null else if (valid <= 5) 1 else minOf(rawScore, 100),
             schemeId = r.u8(6),
             zones = List(8) { r.u8(23 + it) },
-            pressure = List(5) { r.u8(11 + it) },
+            pressure = List(5) { r.u8(11 + it) }.takeIf { it != PLACEHOLDER_PRESSURE }.orEmpty(),
             raw = r.copyOf(RECORD_SIZE).toHex(),
         )
     }

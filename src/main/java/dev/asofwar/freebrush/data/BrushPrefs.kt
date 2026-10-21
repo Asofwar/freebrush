@@ -12,8 +12,12 @@ data class BrushInfo(
     val firmware: String? = null,
     val hardware: String? = null,
     val battery: Int? = null,
-    /** Days the current brush head has been in use, from the brush's own counter. */
+    /** Days and sessions since the brush head was last reset, from the brush's own counters. */
     val headDays: Int? = null,
+    val headUses: Int? = null,
+    /** Brush-head wear counter and its limit as the brush reports them. */
+    val headWear: Int? = null,
+    val headWearMax: Int? = null,
     val lastSyncMillis: Long? = null,
 )
 
@@ -33,6 +37,9 @@ class BrushPrefs(context: Context) {
             hardware = prefs.getString("hardware", null),
             battery = int("battery"),
             headDays = int("headDays"),
+            headUses = int("headUses"),
+            headWear = int("headWear"),
+            headWearMax = int("headWearMax"),
             lastSyncMillis = if (prefs.contains("lastSync")) prefs.getLong("lastSync", 0) else null,
         )
     }
@@ -47,6 +54,9 @@ class BrushPrefs(context: Context) {
                 info.hardware?.let { putString("hardware", it) }
                 info.battery?.let { putInt("battery", it) }
                 info.headDays?.let { putInt("headDays", it) }
+                info.headUses?.let { putInt("headUses", it) }
+                info.headWear?.let { putInt("headWear", it) }
+                info.headWearMax?.let { putInt("headWearMax", it) }
                 info.lastSyncMillis?.let { putLong("lastSync", it) }
             }
         }.apply()

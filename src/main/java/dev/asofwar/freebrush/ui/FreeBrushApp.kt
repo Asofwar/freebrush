@@ -361,6 +361,10 @@ private fun BrushScreen(vm: AppViewModel, brush: BrushInfo, sync: SyncState) {
                 Text(brush.name ?: "Oclean", style = MaterialTheme.typography.titleLarge)
                 InfoRow("Заряд", brush.battery?.let { "$it %" })
                 InfoRow("Насадка в работе", brush.headDays?.let { "$it дн." })
+                InfoRow("Чисток этой насадкой", brush.headUses?.toString())
+                if (brush.headWear != null && brush.headWearMax != null && brush.headWearMax > 0) {
+                    InfoRow("Счётчик износа насадки", "${brush.headWear} из ${brush.headWearMax}")
+                }
                 InfoRow("Модель", brush.model)
                 InfoRow("Прошивка", brush.firmware)
                 InfoRow("Железо", brush.hardware)
