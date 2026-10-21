@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-21
+
 ### Added
 
 - Guided brushing: "Чистить с подсказками" on the Today screen. The brush sends nothing while it runs, so the phone
