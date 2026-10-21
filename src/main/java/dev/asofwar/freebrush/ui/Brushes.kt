@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -44,22 +45,23 @@ fun NameDialog(title: String, initial: String, fallback: String?, onDone: (Strin
         text = {
             Column {
                 Text(
-                    "Например, имя владельца. Его видно в переключателе щёток и в приветствии.",
+                    "Имя поможет различать щётки: оно в переключателе сверху и в приветствии.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(16.dp))
                 OutlinedTextField(
                     value = text,
                     onValueChange = { text = it.take(24) },
                     singleLine = true,
+                    label = { Text("Имя") },
                     placeholder = { Text(fallback ?: "Аня") },
                     keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words, imeAction = ImeAction.Done),
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
         },
-        confirmButton = { TextButton(onClick = done) { Text("Готово") } },
+        confirmButton = { Button(onClick = done) { Text("Готово") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } },
     )
 }

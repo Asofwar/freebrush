@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Generated from scan_hero.svg by svg2vd.py. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="240dp"
+    android:height="240dp"
+    android:viewportWidth="240"
+    android:viewportHeight="240">
+    <path
+        android:pathData="M236 120A116 116 0 1 1 4 120A116 116 0 1 1 236 120Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="radial" android:centerX="120.0" android:centerY="120.0" android:gradientRadius="116.0">
+                <item android:offset="0" android:color="#124FE0CB" />
+                <item android:offset="0.65" android:color="#092FCDB9" />
+                <item android:offset="1" android:color="#000F9A8C" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path
+        android:pathData="M194 120A74 74 0 1 1 46 120A74 74 0 1 1 194 120Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="radial" android:centerX="157.0" android:centerY="81.0" android:gradientRadius="142.0">
+                <item android:offset="0" android:color="#D11C625B" />
+                <item android:offset="0.48" android:color="#C2123E38" />
+                <item android:offset="1" android:color="#A60B1816" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path
+        android:pathData="M234 120A114 114 0 1 1 6 120A114 114 0 1 1 234 120Z"
+        android:strokeColor="#334FE0CB"
+        android:strokeWidth="0.6" />
+    <path
+        android:pathData="M220 120A100 100 0 1 1 20 120A100 100 0 1 1 220 120Z"
+        android:strokeColor="#524FE0CB"
+        android:strokeWidth="0.65" />
+    <path
+        android:pathData="M206 120A86 86 0 1 1 34 120A86 86 0 1 1 206 120Z"
+        android:strokeColor="#6B4FE0CB"
+        android:strokeWidth="0.7" />
+</vector>

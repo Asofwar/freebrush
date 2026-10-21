@@ -72,10 +72,10 @@ fun TodayScreen(
 
         Row(Modifier.staggeredEntrance(3), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             val streak = sessions.streakDays()
-            StatTile(Icons.Flame, "$streak", "дн. подряд", ScoreAmber, Modifier.weight(1f))
-            StatTile(Icons.Star, week.averageScore()?.toString() ?: "—", "средняя оценка за неделю", MaterialTheme.colorScheme.primary, Modifier.weight(1f))
+            StatTile(Icons.Flame, "$streak", "дней подряд", ScoreAmber, Modifier.weight(1f))
+            StatTile(Icons.Star, week.averageScore()?.toString() ?: "—", "средняя оценка", MaterialTheme.colorScheme.primary, Modifier.weight(1f), note = "за неделю")
             val avgTime = week.map { it.durationSec }.takeIf { it.isNotEmpty() }?.average()?.toInt()
-            StatTile(Icons.Clock, avgTime?.let { formatDuration(it) } ?: "—", "среднее время за неделю", MaterialTheme.colorScheme.tertiary, Modifier.weight(1f))
+            StatTile(Icons.Clock, avgTime?.let { formatDuration(it) } ?: "—", "среднее время", MaterialTheme.colorScheme.tertiary, Modifier.weight(1f), note = "за неделю")
         }
 
         if (last != null && last.zones.isNotEmpty()) {

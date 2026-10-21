@@ -1,3 +1,5 @@
+<img src="docs/icon.png" width="96" alt="FreeBrush icon" align="right">
+
 # FreeBrush
 
 An open-source Android app for Oclean smart toothbrushes that works offline.

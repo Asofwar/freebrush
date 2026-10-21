@@ -26,27 +26,31 @@ object Icons {
             }
         }.build()
 
-    val Today = line(
-        "today",
-        "M12,8a4,4 0,1 1,0 8a4,4 0,1 1,0 -8z",
-        "M12,2.5v2M12,19.5v2M2.5,12h2M19.5,12h2M5.3,5.3l1.4,1.4M17.3,17.3l1.4,1.4M5.3,18.7l1.4,-1.4M17.3,6.7l1.4,-1.4",
-    )
-    val Moon = line("moon", "M20,14.5A8,8 0,1 1,9.5 4a6.5,6.5 0,0 0,10.5 10.5z")
-    val History = line("history", "M5,20v-6M12,20v-11M19,20v-15")
-    val Brush = line("brush", "M12,11v10", "M9,3h6v8h-6z", "M10.5,5.5h3M10.5,8.5h3")
-    val Sync = line("sync", "M20,12a8,8 0,1 1,-2.4,-5.7", "M20,4v4.5h-4.5")
-    val Check = line("check", "M5,12.5l4.5,4.5l9.5,-10")
-    val Warning = line("warning", "M12,3.5l9,16h-18z", "M12,10v4.5", "M12,17.3v0.2")
-    val Flame = line("flame", "M12,21a6,6 0,0 1,-6 -6c0,-3.5 3,-5 3,-9c3,1.5 4,3.5 4,5.5c1,-0.8 1.5,-2 1.5,-3c2,1.7 3.5,4 3.5,6.5a6,6 0,0 1,-6 6z")
-    val Star = line("star", "M12,3.5l2.6,5.4l5.9,0.8l-4.3,4.1l1,5.9l-5.2,-2.8l-5.2,2.8l1,-5.9l-4.3,-4.1l5.9,-0.8z")
-    val Clock = line("clock", "M12,3a9,9 0,1 1,0 18a9,9 0,1 1,0 -18z", "M12,7.5v5l3,2")
-    val Share = line("share", "M12,3v12", "M7.5,7.5l4.5,-4.5l4.5,4.5", "M5,13v5.5a2,2 0,0 0,2 2h10a2,2 0,0 0,2 -2v-5.5")
-    val Trash = line("trash", "M4,7h16", "M9.5,7v-3h5v3", "M6,7l1,13.5h10l1,-13.5")
-    val Swap = line("swap", "M7,4l-3,3l3,3", "M4,7h13", "M17,14l3,3l-3,3", "M20,17h-13")
-    val Bluetooth = line("bluetooth", "M7,7.5l10,9l-5,4.5v-18l5,4.5l-10,9")
-    val Download = line("download", "M12,3.5v11", "M7.5,10l4.5,4.5l4.5,-4.5", "M5,19.5h14")
-    val Edit = line("edit", "M4,20h4l10.5,-10.5a2.1,2.1 0,0 0,-3 -3l-10.5,10.5z", "M13.5,7.5l3,3")
-    val Plus = line("plus", "M12,5v14", "M5,12h14")
-    val Chevron = line("chevron", "M6,9l6,6l6,-6")
-    val Battery = line("battery", "M3.5,8h14a1.5,1.5 0,0 1,1.5 1.5v5a1.5,1.5 0,0 1,-1.5 1.5h-14a1.5,1.5 0,0 1,-1.5 -1.5v-5a1.5,1.5 0,0 1,1.5 -1.5z", "M21.5,11v2")
+    // Line icons sliced from the FreeBrush design (24-unit grid, 2-unit round strokes).
+    val Battery = line("battery", "M5 6H17A2 2 0 0 1 19 8V16A2 2 0 0 1 17 18H5A2 2 0 0 1 3 16V8A2 2 0 0 1 5 6ZM19 10H21V14H19M6.5 9V15M10 9V15M13.5 9V15")
+    val Bell = line("bell", "M12 3V4.5M6 10.5A6 6 0 0 1 18 10.5V15L20 18H4L6 15V10.5ZM10 20A2.2 2.2 0 0 0 14 20")
+    val Bluetooth = line("bluetooth", "M11 3L18 8.5L6 18M6 6L18 15.5L11 21V3")
+    // Slim electric brush as drawn on the design sheet (the sliced one came out stocky): handle with a button,
+    // neck, head with bristles.
+    val Brush = line("brush", "M9.5,13.5a2.5,2.5 0,0 1,5 0v6a2.5,2.5 0,0 1,-5 0z", "M12,11V8.5", "M11.25,2.5h1.5v5h-1.5z", "M15.5,3h2M15.5,6.5h2", "M12,15v1.5")
+    val BrushHead = line("brush_head", "M10 3A2 2 0 0 1 12 5V8.5A2 2 0 0 1 8 8.5V5A2 2 0 0 1 10 3ZM15.5 4H18.5M15.5 7H18.5M15.5 10H18.5", "M9.5 10.5L9 16C8.8 18 8.2 19.5 7.5 21H13.5C12.8 19.5 12.2 18 12 16L11.5 10.5")
+    val Check = line("check", "M4 12.5L9.5 18L20 6")
+    val Chevron = line("chevron_down", "M5 9L12 16L19 9")
+    val ChevronRight = line("chevron_right", "M9 5L16 12L9 19")
+    val Clock = line("clock", "M21 12A9 9 0 1 1 3 12A9 9 0 1 1 21 12ZM12 6V12L16 15")
+    val Download = line("download", "M12 3V16M6 10L12 16L18 10M4 21H20")
+    val Edit = line("edit", "M4.5 15.5L16 4A2 2 0 0 1 18.8 4L20 5.2A2 2 0 0 1 20 8L8.5 19.5L3 21L4.5 15.5ZM14 6L18 10")
+    val Flame = line("flame", "M12 3C13 7 8.2 8.6 6.5 12.5C4.2 18 7.8 20.6 10 21C9 18.5 9.7 16 11.5 14C11 18 15.7 18 14 21C20.5 19.6 22 13.4 18 8.7C17.5 11 16.4 11.8 15.6 12C16.5 7.5 14.3 4.5 12 3Z")
+    val History = line("history", "M4.5 14H6.5A1 1 0 0 1 7.5 15V20A1 1 0 0 1 6.5 21H4.5A1 1 0 0 1 3.5 20V15A1 1 0 0 1 4.5 14ZM11 9H13A1 1 0 0 1 14 10V20A1 1 0 0 1 13 21H11A1 1 0 0 1 10 20V10A1 1 0 0 1 11 9ZM17.5 3H19.5A1 1 0 0 1 20.5 4V20A1 1 0 0 1 19.5 21H17.5A1 1 0 0 1 16.5 20V4A1 1 0 0 1 17.5 3Z")
+    val Moon = line("moon", "M20.5 13.4A8.9 8.9 0 0 1 10.6 3.5A8.9 8.9 0 1 0 20.5 13.4Z")
+    val PersonAdd = line("person_add", "M12.5 6.5A3.5 3.5 0 1 1 5.5 6.5A3.5 3.5 0 1 1 12.5 6.5ZM13 13.5H9A6 6 0 0 0 3 19.5V21H15M18 12V18M15 15H21")
+    val Plus = line("plus", "M12 4V20M4 12H20")
+    val Share = line("share", "M12 15V3M7.5 7.5L12 3L16.5 7.5M8 11H5A1 1 0 0 0 4 12V20A1 1 0 0 0 5 21H19A1 1 0 0 0 20 20V12A1 1 0 0 0 19 11H16")
+    val Star = line("star", "M12 3L14.75 8.6L21 9.5L16.5 13.9L17.6 20.1L12 17.2L6.4 20.1L7.5 13.9L3 9.5L9.25 8.6Z")
+    val Swap = line("swap", "M3 7H21M17 3L21 7L17 11M21 17H3M7 13L3 17L7 21")
+    val Sync = line("sync", "M3.8 9A8.6 8.6 0 0 1 19.8 7.6M20.5 3.8L19.8 7.6L16 6.7M20.2 15A8.6 8.6 0 0 1 4.2 16.4M3.5 20.2L4.2 16.4L8 17.3")
+    val Today = line("today", "M17 12A5 5 0 1 1 7 12A5 5 0 1 1 17 12ZM12 3V5M12 19V21M3 12H5M19 12H21M5.6 5.6L7 7M17 17L18.4 18.4M18.4 5.6L17 7M7 17L5.6 18.4")
+    val Trash = line("trash", "M3.5 6.5H20.5M9 6.5V4.5A1.5 1.5 0 0 1 10.5 3H13.5A1.5 1.5 0 0 1 15 4.5V6.5M5.5 6.5L6.5 19A2 2 0 0 0 8.5 21H15.5A2 2 0 0 0 17.5 19L18.5 6.5M10 10.5V17M14 10.5V17")
+    val Tune = line("tune", "M3 7H5.5M10.5 7H21M10.5 7A2.5 2.5 0 1 1 5.5 7A2.5 2.5 0 1 1 10.5 7ZM3 17H13.5M18.5 17H21M18.5 17A2.5 2.5 0 1 1 13.5 17A2.5 2.5 0 1 1 18.5 17Z")
+    val Warning = line("warning", "M10.7 4A1.5 1.5 0 0 1 13.3 4L20.8 18.8A1.5 1.5 0 0 1 19.5 21H4.5A1.5 1.5 0 0 1 3.2 18.8L10.7 4ZM12 9V13M12 17.2V17.3")
 }

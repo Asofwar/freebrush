@@ -48,32 +48,6 @@ fun ActionLine(action: ActionState) {
     Text(text, style = MaterialTheme.typography.labelLarge, color = color)
 }
 
-/** The programme the brush runs now, with a button to choose another. */
-@Composable
-fun ProgrammeCard(settings: ByteArray?, custom: List<Programme>, busy: Boolean, onChoose: () -> Unit, modifier: Modifier = Modifier) {
-    val auto = settings?.let { Toggle.AUTO_MODE.isOn(it) } == true
-    val num = settings?.let { it[BrushControls.SCHEME_INDEX].toInt() and 0xFF }
-    val p = num?.let { Programmes.find(it, custom) }
-    SectionCard(modifier, title = "Режим чистки") {
-        when {
-            settings == null -> Text("Синхронизируйся, чтобы увидеть режим щётки", style = MaterialTheme.typography.bodyMedium)
-            auto -> {
-                Text("Утро и вечер", style = MaterialTheme.typography.titleLarge)
-                Text("Днём «Эксклюзивный» 4:00, вечером «Закат» 3:00", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            p != null -> {
-                Text(p.name, style = MaterialTheme.typography.titleLarge)
-                Text("${formatDuration(p.seconds)} · программа №${p.num}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Spacer(Modifier.height(10.dp))
-                StepBars(p.steps, Modifier.fillMaxWidth())
-            }
-            else -> Text("Программа №$num", style = MaterialTheme.typography.titleLarge)
-        }
-        Spacer(Modifier.height(14.dp))
-        Button(onClick = onChoose, enabled = !busy) { Text("Выбрать программу") }
-    }
-}
-
 /** Every switch the brush firmware has, including the ones the official app hides. */
 @Composable
 fun SettingsCard(settings: ByteArray?, busy: Boolean, onToggle: (Toggle, Boolean) -> Unit, onLanguage: (Int) -> Unit, modifier: Modifier = Modifier) {

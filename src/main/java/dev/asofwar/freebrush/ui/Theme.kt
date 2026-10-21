@@ -43,33 +43,38 @@ private val LightColors = lightColorScheme(
     error = Color(0xFFBA1A1A),
 )
 
+/** Dark palette from the FreeBrush design spec (slices/spec.md): near-black teal ground, mint accents. */
 private val DarkColors = darkColorScheme(
-    primary = Color(0xFF6FD9CB),
-    onPrimary = Color(0xFF003731),
-    primaryContainer = Color(0xFF005048),
-    onPrimaryContainer = Color(0xFF8DF5E7),
+    primary = Color(0xFF4FE0CB),
+    onPrimary = Color(0xFF08201B),
+    primaryContainer = Color(0xFF117D70),
+    onPrimaryContainer = Color(0xFFF1FAF7),
     secondary = Color(0xFFB1CCC6),
     onSecondary = Color(0xFF1C3531),
-    secondaryContainer = Color(0xFF334B47),
-    onSecondaryContainer = Color(0xFFCCE8E2),
+    // Selected chips.
+    secondaryContainer = Color(0xFF117D70),
+    onSecondaryContainer = Color(0xFFF1FAF7),
     tertiary = Color(0xFFA4CBF5),
     onTertiary = Color(0xFF02334F),
     tertiaryContainer = Color(0xFF214A6F),
     onTertiaryContainer = Color(0xFFCFE5FF),
-    background = Color(0xFF0D1413),
-    onBackground = Color(0xFFDDE4E2),
-    surface = Color(0xFF0D1413),
-    onSurface = Color(0xFFDDE4E2),
-    surfaceVariant = Color(0xFF3F4947),
-    onSurfaceVariant = Color(0xFFBEC9C6),
-    surfaceContainerLowest = Color(0xFF080F0E),
-    surfaceContainerLow = Color(0xFF161D1C),
-    surfaceContainer = Color(0xFF1A2120),
-    surfaceContainerHigh = Color(0xFF242B2A),
-    surfaceContainerHighest = Color(0xFF2F3635),
-    outline = Color(0xFF889391),
-    outlineVariant = Color(0xFF3F4947),
-    error = Color(0xFFFFB4AB),
+    background = Color(0xFF0F1514),
+    onBackground = Color(0xFFE7EEEC),
+    surface = Color(0xFF0F1514),
+    onSurface = Color(0xFFE7EEEC),
+    surfaceVariant = Color(0xFF2C4240),
+    onSurfaceVariant = Color(0xFFA9BFBE),
+    surfaceContainerLowest = Color(0xFF0A100F),
+    // Cards.
+    surfaceContainerLow = Color(0xFF1A2120),
+    // Bottom bar.
+    surfaceContainer = Color(0xFF121918),
+    surfaceContainerHigh = Color(0xFF1F2827),
+    surfaceContainerHighest = Color(0xFF2A3432),
+    // Unselected chip outline; card borders and dividers.
+    outline = Color(0xFF5B7D7B),
+    outlineVariant = Color(0xFF293735),
+    error = Color(0xFFFF8171),
 )
 
 private val AppShapes = Shapes(

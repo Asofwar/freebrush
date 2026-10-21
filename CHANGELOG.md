@@ -6,12 +6,18 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-21
+
 ### Added
 
 - Several brushes, one per person: each has its own name, history, statistics, settings and growth level. Chips at
   the top switch between them and the greeting uses the name. When the app opens with several brushes it listens for
   a few seconds which of them are awake and syncs those. "Replace with a new brush" moves a person's history, name and
   level to their new brush; "Delete brush" removes it with its history. Data of 0.1 moves over on the first start.
+- New look from a full design pass: an app icon with a white brush and bubbles on teal (plus a themed-icon
+  silhouette), one set of line icons, the Brush tab with a header showing the name, a picture of the brush and its
+  charge, mode and brush-head cards side by side, list rows with chevrons, a search screen with a glowing scan around
+  the brush, a naming dialog, and the colour palette of the design spec.
 
 ### Fixed
 

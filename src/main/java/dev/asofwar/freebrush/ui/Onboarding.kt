@@ -7,6 +7,16 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import dev.asofwar.freebrush.R
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -147,12 +157,14 @@ fun PairScreen(
     val list = found.filter { it.address !in known && (showAll || it.looksLikeOclean) }.sortedByDescending { it.rssi }
     LazyColumn(
         Modifier.fillMaxSize().safeDrawingPadding(),
-        contentPadding = PaddingValues(20.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        item(key = "radar") {
+        item(key = "hero") {
             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
-                Radar(Modifier.size(200.dp))
+                ScanHero(Modifier.size(220.dp))
+                Spacer(Modifier.height(20.dp))
                 Text(
                     when (mode) {
                         PairMode.First -> "Ищу щётку"
@@ -160,34 +172,55 @@ fun PairScreen(
                         PairMode.Replace -> "Ищу новую щётку"
                     },
                     style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    textAlign = TextAlign.Center,
                 )
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(10.dp))
                 Text(
-                    "Возьми щётку в руку или нажми кнопку, чтобы она проснулась. Приложение Oclean лучше закрыть: щётка держит только одно соединение.",
-                    style = MaterialTheme.typography.bodyMedium,
+                    "Возьми щётку в руку или нажми кнопку, чтобы она проснулась.",
+                    style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "Закрой приложение Oclean: щётка держит одно соединение.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
+                    textAlign = TextAlign.Center,
                 )
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 8.dp)) }
-                TextButton(onClick = { showAll = !showAll }) { Text(if (showAll) "Показать только Oclean" else "Показать все устройства") }
-                if (onCancel != null) TextButton(onClick = onCancel) { Text("Отмена") }
+                Spacer(Modifier.height(12.dp))
             }
         }
         items(list, key = { it.address }) { d ->
             Surface(
                 onClick = { if (mode == PairMode.Replace) onPick(d, null) else picked = d },
-                shape = MaterialTheme.shapes.medium,
-                color = if (d.looksLikeOclean) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
+                shape = MaterialTheme.shapes.large,
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
                 modifier = Modifier.fillMaxWidth().animateItem(),
             ) {
-                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(if (d.looksLikeOclean) Icons.Brush else Icons.Bluetooth, null, modifier = Modifier.size(24.dp))
-                    Spacer(Modifier.width(14.dp))
+                Row(Modifier.padding(horizontal = 18.dp, vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        if (d.looksLikeOclean) Icons.Brush else Icons.Bluetooth,
+                        null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(30.dp),
+                    )
+                    Spacer(Modifier.width(16.dp))
                     Column(Modifier.weight(1f)) {
                         Text(d.name ?: "Без имени", style = MaterialTheme.typography.titleMedium)
                         Text(d.address, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     SignalBars(d.rssi)
                 }
+            }
+        }
+        item(key = "actions") {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                TextButton(onClick = { showAll = !showAll }) { Text(if (showAll) "Показать только Oclean" else "Показать все устройства") }
+                if (onCancel != null) TextButton(onClick = onCancel) { Text("Отмена") }
             }
         }
     }
@@ -203,24 +236,33 @@ fun PairScreen(
     }
 }
 
-/** Three rings expanding from a Bluetooth badge, staggered. */
+/** The search visual: a glowing disc with fine rings, a light sweeping round it and the brush in the middle. */
 @Composable
-private fun Radar(modifier: Modifier) {
-    val t = rememberInfiniteTransition(label = "radar")
-    val p by t.animateFloat(0f, 1f, infiniteRepeatable(tween(2400, easing = LinearEasing), RepeatMode.Restart), label = "p")
+private fun ScanHero(modifier: Modifier) {
+    val t = rememberInfiniteTransition(label = "scan")
+    val turn by t.animateFloat(0f, 360f, infiniteRepeatable(tween(2600, easing = LinearEasing), RepeatMode.Restart), label = "turn")
+    val pulse by t.animateFloat(0f, 1f, infiniteRepeatable(tween(2600, easing = LinearEasing), RepeatMode.Restart), label = "pulse")
     val color = MaterialTheme.colorScheme.primary
     Box(modifier, contentAlignment = Alignment.Center) {
+        Image(painterResource(R.drawable.scan_hero), null, modifier = Modifier.fillMaxSize())
         Canvas(Modifier.fillMaxSize()) {
-            val maxR = size.minDimension / 2
-            for (i in 0 until 3) {
-                val q = (p + i / 3f) % 1f
-                drawCircle(color.copy(alpha = (1f - q) * 0.45f), radius = maxR * (0.25f + 0.75f * q), style = Stroke(4f))
-            }
+            val r = size.minDimension * 0.44f
+            drawCircle(color.copy(alpha = (1f - pulse) * 0.25f), radius = r * (0.55f + 0.45f * pulse), style = Stroke(1.5.dp.toPx()))
         }
-        Box(
-            Modifier.size(64.dp).clip(CircleShape).background(color),
-            contentAlignment = Alignment.Center,
-        ) { Icon(Icons.Bluetooth, null, tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(30.dp)) }
+        // The sweep turns by rotating its layer, cheaper than rebuilding the gradient every frame.
+        Canvas(Modifier.fillMaxSize().rotate(turn)) {
+            val r = size.minDimension * 0.44f
+            drawArc(
+                brush = Brush.sweepGradient(0f to color.copy(alpha = 0f), 80f / 360f to color, 1f to color.copy(alpha = 0f), center = center),
+                startAngle = 0f,
+                sweepAngle = 80f,
+                useCenter = false,
+                topLeft = Offset(center.x - r, center.y - r),
+                size = Size(r * 2, r * 2),
+                style = Stroke(2.5.dp.toPx(), cap = StrokeCap.Round),
+            )
+        }
+        Icon(Icons.Brush, null, tint = color, modifier = Modifier.size(64.dp))
     }
 }
 

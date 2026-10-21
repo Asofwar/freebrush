@@ -42,6 +42,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.asofwar.freebrush.SyncState
@@ -98,7 +99,7 @@ fun SyncChip(sync: SyncState, brush: BrushInfo, onRetry: () -> Unit) {
             is SyncState.Running -> Triple(null, state.step, MaterialTheme.colorScheme.primary)
             is SyncState.Done -> Triple(
                 Icons.Check,
-                if (state.added > 0) "Новых чисток: ${state.added}" else "Всё синхронизировано",
+                if (state.added > 0) "Новых чисток: ${state.added}" else "Синхронизировано в " + java.time.LocalTime.now().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm")),
                 ScoreGreen,
             )
             is SyncState.Failed -> Triple(Icons.Warning, state.message, MaterialTheme.colorScheme.error)
@@ -129,18 +130,16 @@ fun SyncChip(sync: SyncState, brush: BrushInfo, onRetry: () -> Unit) {
     }
 }
 
-/** Small tile: icon in a tinted circle, a big value and a caption. */
+/** Small tile: a tinted icon, a big value and a caption. */
 @Composable
-fun StatTile(icon: ImageVector, value: String, caption: String, tint: Color, modifier: Modifier = Modifier) {
-    Surface(modifier, shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceContainerLow) {
-        Column(Modifier.padding(14.dp)) {
-            Box(
-                Modifier.size(34.dp).clip(CircleShape).background(tint.copy(alpha = 0.15f)),
-                contentAlignment = Alignment.Center,
-            ) { Icon(icon, null, tint = tint, modifier = Modifier.size(18.dp)) }
-            Spacer(Modifier.height(10.dp))
-            Text(value, style = MaterialTheme.typography.titleLarge)
-            Text(caption, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
+fun StatTile(icon: ImageVector, value: String, caption: String, tint: Color, modifier: Modifier = Modifier, note: String? = null) {
+    Surface(modifier, shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainerLow) {
+        Column(Modifier.padding(16.dp)) {
+            Icon(icon, null, tint = tint, modifier = Modifier.size(26.dp))
+            Spacer(Modifier.height(12.dp))
+            Text(value, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold)
+            Text(caption, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
+            note?.let { Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)) }
         }
     }
 }
@@ -153,16 +152,17 @@ fun InfoRow(label: String, value: String?) {
     }
 }
 
-/** Clickable list row with a leading icon. */
+/** Clickable list row: leading icon, text, a chevron at the end. */
 @Composable
 fun ActionRow(icon: ImageVector, text: String, tint: Color = MaterialTheme.colorScheme.onSurface, iconRotation: Float = 0f, onClick: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).clickable(onClick = onClick).padding(vertical = 12.dp, horizontal = 4.dp),
+        Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).clickable(onClick = onClick).padding(vertical = 14.dp, horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(icon, null, tint = tint, modifier = Modifier.size(22.dp).rotate(iconRotation))
         Spacer(Modifier.width(16.dp))
-        Text(text, style = MaterialTheme.typography.bodyLarge, color = tint)
+        Text(text, style = MaterialTheme.typography.bodyLarge, color = tint, modifier = Modifier.weight(1f))
+        Icon(Icons.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
     }
 }
 

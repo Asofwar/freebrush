@@ -41,6 +41,7 @@ fun UpdatesCard(modifier: Modifier = Modifier) {
 
     SectionCard(modifier, title = "Обновления") {
         InfoRow("Версия", BuildConfig.VERSION_NAME)
+        RowDivider()
         Row(
             Modifier.fillMaxWidth().clickable { updater.setAuto(!auto) }.padding(vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -48,8 +49,8 @@ fun UpdatesCard(modifier: Modifier = Modifier) {
             Column(Modifier.weight(1f)) {
                 Text("Проверять обновления", style = MaterialTheme.typography.bodyLarge)
                 Text(
-                    "Раз в день спрашивает GitHub, нет ли новой версии. О вас и щётке ничего не отправляет. " +
-                        "Выключите, и приложение не будет выходить в интернет.",
+                    "Раз в день · через GitHub. О тебе и щётке ничего не отправляет; выключи, и приложение " +
+                        "не будет выходить в интернет.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -57,6 +58,7 @@ fun UpdatesCard(modifier: Modifier = Modifier) {
             Spacer(Modifier.width(12.dp))
             Switch(checked = auto, onCheckedChange = updater::setAuto)
         }
+        RowDivider()
         ActionRow(
             Icons.Download,
             if (checking) "Проверяю…" else "Проверить сейчас",
@@ -104,8 +106,8 @@ fun UpdateDialog() {
                     if (context.packageManager.canRequestPackageInstalls()) {
                         "FreeBrush закроется на пару секунд и обновится до ${s.release.version}. Данные останутся."
                     } else {
-                        "Android попросит разрешить FreeBrush устанавливать приложения. Включите разрешение, " +
-                            "вернитесь сюда и нажмите «Установить» ещё раз."
+                        "Android попросит разрешить FreeBrush устанавливать приложения. Включи разрешение, " +
+                            "вернись сюда и нажми «Установить» ещё раз."
                     },
                 )
             },
@@ -123,7 +125,7 @@ fun UpdateDialog() {
         is UpdateState.Installing -> AlertDialog(
             onDismissRequest = updater::dismiss,
             title = { Text("Установка ${s.release.version}") },
-            text = { Text("FreeBrush закроется. Если не откроется сам, запустите его снова.") },
+            text = { Text("FreeBrush закроется. Если не откроется сам, запусти его снова.") },
             confirmButton = {},
             dismissButton = { TextButton(onClick = updater::dismiss) { Text("Скрыть") } },
         )

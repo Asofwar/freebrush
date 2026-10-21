@@ -65,34 +65,28 @@ fun BrushScreen(vm: AppViewModel, brush: BrushInfo, sync: SyncState, onPair: (Pa
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        Box(Modifier.staggeredEntrance(0)) { ScreenHeader(brush.title, brush.model) }
-        Box(Modifier.staggeredEntrance(1)) { SyncChip(sync, brush, vm::syncNow) }
-
-        SectionCard(Modifier.staggeredEntrance(2)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Battery, null, tint = batteryColor(brush.battery), modifier = Modifier.size(22.dp))
-                Spacer(Modifier.width(10.dp))
-                Text("Заряд", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-                Text(brush.battery?.let { "$it %" } ?: "—", style = MaterialTheme.typography.titleMedium)
-            }
-            Spacer(Modifier.height(10.dp))
-            Gauge((brush.battery ?: 0) / 100f, batteryColor(brush.battery))
-        }
+        BrushHeaderCard(brush, sync, vm::syncNow, Modifier.staggeredEntrance(0))
 
         ActionLine(action)
 
-        ProgrammeCard(settings, custom, busy, onChoose = { programmes = true }, modifier = Modifier.staggeredEntrance(3))
+        ModeAndHeadRow(
+            brush,
+            settings,
+            custom,
+            busy,
+            onChooseProgramme = { programmes = true },
+            onResetHead = vm::resetHead,
+            onHeadLimit = vm::setHeadLimit,
+            modifier = Modifier.staggeredEntrance(1),
+        )
 
-        HeadCard(brush, Modifier.staggeredEntrance(3)) {
-            HeadActions(brush.headWearMax, busy, onReset = vm::resetHead, onLimit = vm::setHeadLimit)
-        }
+        SettingsCard(settings, busy, onToggle = vm::setToggle, onLanguage = vm::setLanguage, modifier = Modifier.staggeredEntrance(2))
 
-        SettingsCard(settings, busy, onToggle = vm::setToggle, onLanguage = vm::setLanguage, modifier = Modifier.staggeredEntrance(4))
-
-        SectionCard(Modifier.staggeredEntrance(4)) {
+        SectionCard(Modifier.staggeredEntrance(3)) {
             ActionRow(Icons.Sync, if (running) "Синхронизация…" else "Синхронизировать", MaterialTheme.colorScheme.primary, spinningRotation(running)) {
                 vm.syncNow()
             }
+            RowDivider()
             ActionRow(Icons.Share, "Экспорт истории в CSV") {
                 scope.launch {
                     val uri = vm.exportCsv()
@@ -104,12 +98,19 @@ fun BrushScreen(vm: AppViewModel, brush: BrushInfo, sync: SyncState, onPair: (Pa
                     context.startActivity(Intent.createChooser(send, "Экспорт истории"))
                 }
             }
+            RowDivider()
             ActionRow(Icons.Edit, "Переименовать") { renaming = true }
-            ActionRow(Icons.Plus, "Добавить щётку другого человека") { onPair(PairMode.Add) }
+            RowDivider()
+            ActionRow(Icons.PersonAdd, "Добавить щётку другого человека") { onPair(PairMode.Add) }
+            RowDivider()
             ActionRow(Icons.Swap, "Заменить на новую щётку") { confirmReplace = true }
+            RowDivider()
             ActionRow(Icons.Trash, "Стереть историю", MaterialTheme.colorScheme.error) { confirmClear = true }
+            RowDivider()
             ActionRow(Icons.Trash, "Удалить щётку", MaterialTheme.colorScheme.error) { confirmRemove = true }
         }
+
+        UpdatesCard(Modifier.staggeredEntrance(4))
 
         SectionCard(Modifier.staggeredEntrance(5), title = "Об устройстве") {
             InfoRow("Модель", brush.model)
@@ -118,8 +119,6 @@ fun BrushScreen(vm: AppViewModel, brush: BrushInfo, sync: SyncState, onPair: (Pa
             InfoRow("Адрес", brush.address)
             if (BrushControls.hasGrowth(brush.hardware)) InfoRow("Очки роста (уровень на экране щётки)", brush.growthTotal.toString())
         }
-
-        UpdatesCard(Modifier.staggeredEntrance(6))
 
         if (log.isNotEmpty()) SyncLog(log, Modifier.staggeredEntrance(6))
         Spacer(Modifier.height(8.dp))
@@ -178,46 +177,6 @@ fun BrushScreen(vm: AppViewModel, brush: BrushInfo, sync: SyncState, onPair: (Pa
             title = { Text("Стереть историю?") },
             text = { Text("Все чистки «${brush.title}» удалятся с телефона, отменить это нельзя. На щётке останутся только последние 32.") },
         )
-    }
-}
-
-@Composable
-private fun HeadCard(brush: BrushInfo, modifier: Modifier, actions: @Composable () -> Unit) {
-    val wear = if (brush.headWear != null && brush.headWearMax != null && brush.headWearMax > 0) {
-        brush.headWear.toFloat() / brush.headWearMax
-    } else {
-        null
-    }
-    val worn = wear != null && wear >= 0.9f
-    SectionCard(modifier, title = "Насадка") {
-        Row {
-            Column(Modifier.weight(1f)) {
-                Text(brush.headDays?.toString() ?: "—", style = MaterialTheme.typography.headlineMedium)
-                Text("дней в работе", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            Column(Modifier.weight(1f)) {
-                Text(brush.headUses?.toString() ?: "—", style = MaterialTheme.typography.headlineMedium)
-                Text("чисток этой насадкой", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
-        if (wear != null) {
-            Spacer(Modifier.height(14.dp))
-            Row {
-                Text("Износ по счётчику щётки", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
-                Text("${brush.headWear} из ${brush.headWearMax}", style = MaterialTheme.typography.bodySmall)
-            }
-            Spacer(Modifier.height(6.dp))
-            Gauge(wear, if (worn) ScoreRed else MaterialTheme.colorScheme.primary)
-            if (worn) {
-                Spacer(Modifier.height(10.dp))
-                Row(Modifier.alpha(pulseAlpha()), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Warning, null, tint = ScoreRed, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Похоже, насадку пора менять", style = MaterialTheme.typography.labelLarge, color = ScoreRed)
-                }
-            }
-        }
-        actions()
     }
 }
 
