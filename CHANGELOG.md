@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-10-21
+
 ### Fixed
 
 - A brush that stops answering in the middle of a sync no longer leaves the sync running forever, and the other
