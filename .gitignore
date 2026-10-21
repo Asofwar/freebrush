@@ -5,7 +5,7 @@
 *.jks
 *.keystore
 /.idea
-/build
+build/
 *.apk
 *.ap_
 *.aab

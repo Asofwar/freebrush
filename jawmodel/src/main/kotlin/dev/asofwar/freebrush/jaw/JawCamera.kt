@@ -1,4 +1,4 @@
-package dev.asofwar.freebrush.ui.jaw
+package dev.asofwar.freebrush.jaw
 
 import kotlin.math.cos
 import kotlin.math.max
@@ -14,7 +14,7 @@ import kotlin.math.tan
  * The model spins around its vertical axis (yaw) on a floor; the camera looks at it from an elevation (pitch).
  * [modelView] with `mirrored` gives the reflection of the model in that floor.
  */
-class JawCamera(private val mesh: JawMesh) {
+class JawCamera(private val mesh: JawGeometry) {
     private val cx: Float
     private val cy: Float
     private val cz: Float

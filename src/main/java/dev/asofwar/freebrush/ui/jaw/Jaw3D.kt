@@ -2,13 +2,10 @@ package dev.asofwar.freebrush.ui.jaw
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.FloatExponentialDecaySpec
-import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDecay
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -51,7 +48,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -61,12 +57,20 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import android.content.Context
+import android.util.Log
+import androidx.compose.ui.platform.LocalContext
+import dev.asofwar.freebrush.jaw.BakedJaw
+import dev.asofwar.freebrush.jaw.JawCamera
+import dev.asofwar.freebrush.jaw.JawCodec
 import dev.asofwar.freebrush.data.BrushSession
 import dev.asofwar.freebrush.data.Zones
 import dev.asofwar.freebrush.data.zoneSeconds
@@ -86,8 +90,8 @@ private const val DEFAULT_PITCH = 0.34f
 /** Seconds per zone the app aims for: two minutes spread over eight zones. */
 private const val GOAL_ZONE_SEC = 15
 
-/** Turntable speed while nobody touches the model, radians per second (a turn in about half a minute). */
-private const val TURNTABLE = 0.2f
+/** Where the model comes to rest after its entrance turn. */
+private const val REST_YAW = -0.5f
 
 /** Light-ring colours: fixed, not themed, so the data reads the same in light and dark mode. */
 private val RING_FRESH = Color(0xFF34D399)
@@ -103,62 +107,82 @@ private val ZONE_VIEWS = arrayOf(
     0.80f to 0.10f, -2.60f to 0.02f, 0.80f to 0.34f, -2.60f to 0.24f,
 )
 
-/** The mesh has tens of thousands of vertices: build it once per process, off the main thread. */
+/**
+ * The jaw is generated on the build machine and shipped baked in the APK (assets/jaw.bin): the phone only reads
+ * it, once per process, off the main thread.
+ */
 private object JawCache {
-    val mesh: JawMesh by lazy { JawModel.build() }
-    val camera: JawCamera by lazy { JawCamera(mesh) }
+    @Volatile
+    private var loaded: Pair<BakedJaw, JawCamera>? = null
+
+    fun get(context: Context): Pair<BakedJaw, JawCamera> = loaded ?: synchronized(this) {
+        loaded ?: run {
+            val start = System.nanoTime()
+            val jaw = JawCodec.decode(context.assets.open("jaw.bin").use { it.readBytes() })
+            Log.d("JawGl", "baked jaw: ${jaw.vertexCount} vertices loaded in ${(System.nanoTime() - start) / 1_000_000} ms")
+            (jaw to JawCamera(jaw)).also { loaded = it }
+        }
+    }
 }
 
 /**
  * A porcelain dentition on a glossy stage, rendered on the GPU. Brushing time per zone is shown as light: a
  * glowing line under every zone, mint when brushed enough, amber when missed. Drag sideways to turn it (with
  * inertia); tap a tooth or a light line and the model turns to present that zone; double-tap to reset.
- * Until touched, it turns slowly like a product on a turntable.
+ *
+ * Frames are drawn only while something moves: the model makes one slow entrance turn and then rests, every
+ * animation is finite, and nothing is sent to the GPU while the model is scrolled out of view.
  */
 @Composable
 fun Jaw3D(session: BrushSession, history: List<BrushSession>, modifier: Modifier = Modifier) {
     val seconds = session.zoneSeconds()
     if (seconds.size < 8) return
 
-    val mesh by produceState<JawMesh?>(null) {
-        value = withContext(Dispatchers.Default) { JawCache.camera; JawCache.mesh }
+    val context = LocalContext.current.applicationContext
+    val baked by produceState<Pair<BakedJaw, JawCamera>?>(null) {
+        value = withContext(Dispatchers.IO) { JawCache.get(context) }
     }
+    val camera = baked?.second
     val scope = rememberCoroutineScope()
     val haptics = LocalHapticFeedback.current
     val dark = isSystemInDarkTheme()
 
-    var yaw by remember { mutableFloatStateOf(-0.5f) }
+    var yaw by remember { mutableFloatStateOf(REST_YAW - 0.9f) }
     var pitch by remember { mutableFloatStateOf(DEFAULT_PITCH) }
     var selected by remember(session.key) { mutableIntStateOf(-1) }
     var touched by remember { mutableStateOf(false) }
+    var visible by remember { mutableStateOf(true) }
     var motion by remember { mutableStateOf<Job?>(null) }
     var view by remember { mutableStateOf<JawGlView?>(null) }
     val entrance = remember(session.key) { Animatable(0.82f) }
     val rings by rememberUpdatedState(ringData(seconds))
 
+    // Entrance: the model grows in and makes one slow, settling turn, then rests.
     LaunchedEffect(session.key) {
-        entrance.animateTo(1f, spring(dampingRatio = 0.7f, stiffness = Spring.StiffnessVeryLow))
-    }
-    // Turntable until the first touch.
-    LaunchedEffect(touched) {
-        if (touched) return@LaunchedEffect
-        var last = withFrameNanos { it }
-        while (true) {
-            withFrameNanos { now ->
-                yaw += TURNTABLE * (now - last) / 1e9f
-                last = now
+        launch { entrance.animateTo(1f, spring(dampingRatio = 0.7f, stiffness = Spring.StiffnessVeryLow)) }
+        if (!touched) {
+            val from = yaw
+            Animatable(0f).animateTo(1f, tween(2600, easing = FastOutSlowInEasing)) {
+                if (!touched) yaw = from + (REST_YAW - from) * value
             }
         }
     }
-    val pulse = rememberInfiniteTransition(label = "glow")
-    val glow by pulse.animateFloat(0f, 1f, infiniteRepeatable(tween(1100), RepeatMode.Reverse), label = "glow")
+    // A selected zone lights up once and stays lit; no endless pulsing.
+    val glow = remember { Animatable(0f) }
+    LaunchedEffect(selected) {
+        if (selected < 0) return@LaunchedEffect
+        glow.snapTo(0f)
+        glow.animateTo(1f, tween(320))
+        glow.animateTo(0.55f, tween(900))
+    }
 
-    // Push every visible change to the GL thread; nothing is drawn while the model is still.
+    // Push changes to the GL thread only while the model is on screen; nothing is drawn while it is still.
     LaunchedEffect(view) {
         val v = view ?: return@LaunchedEffect
         snapshotFlow {
-            JawGlView.Frame(yaw, pitch, entrance.value, rings, selected, if (selected >= 0) glow else 0f)
-        }.collect { v.submit(it) }
+            if (!visible) null
+            else JawGlView.Frame(yaw, pitch, entrance.value, rings, selected, if (selected >= 0) glow.value else 0f)
+        }.collect { frame -> frame?.let(v::submit) }
     }
 
     /** Turns the model to [targetYaw]/[targetPitch] along the shortest way round, then runs [then]. */
@@ -185,6 +209,8 @@ fun Jaw3D(session: BrushSession, history: List<BrushSession>, modifier: Modifier
                 .widthIn(max = 640.dp)
                 .fillMaxWidth()
                 .height(300.dp)
+                // Bounds clipped to the window are empty once the stage scrolls out of view.
+                .onGloballyPositioned { visible = !it.boundsInWindow().isEmpty }
                 .clip(RoundedCornerShape(26.dp))
                 .background(
                     Brush.radialGradient(
@@ -194,12 +220,12 @@ fun Jaw3D(session: BrushSession, history: List<BrushSession>, modifier: Modifier
                     ),
                 ),
         ) {
-            val m = mesh
-            if (m == null) {
+            val b = baked
+            if (b == null) {
                 CircularProgressIndicator(Modifier.align(Alignment.Center).size(28.dp), strokeWidth = 2.dp)
             } else {
                 AndroidView(
-                    factory = { ctx -> JawGlView(ctx, m, JawCache.camera).also { view = it } },
+                    factory = { ctx -> JawGlView(ctx, b.first, b.second).also { view = it } },
                     modifier = Modifier.matchParentSize(),
                 )
             }
@@ -207,11 +233,11 @@ fun Jaw3D(session: BrushSession, history: List<BrushSession>, modifier: Modifier
             Box(
                 Modifier
                     .matchParentSize()
-                    .pointerInput(session.key) {
+                    .pointerInput(session.key, camera) {
                         detectTapGestures(
                             onTap = { o ->
                                 touched = true
-                                val z = JawCache.camera.pick(o.x, o.y, size.width.toFloat(), size.height.toFloat(), yaw, pitch, entrance.value)
+                                val z = camera?.pick(o.x, o.y, size.width.toFloat(), size.height.toFloat(), yaw, pitch, entrance.value)
                                 if (z != null && z >= 0 && z != selected) {
                                     selected = z
                                     haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
@@ -224,8 +250,7 @@ fun Jaw3D(session: BrushSession, history: List<BrushSession>, modifier: Modifier
                             onDoubleTap = {
                                 selected = -1
                                 touched = true
-                                // Back to the starting view, then the turntable resumes.
-                                turnTo(-0.5f, DEFAULT_PITCH) { touched = false }
+                                turnTo(REST_YAW, DEFAULT_PITCH)
                             },
                         )
                     }

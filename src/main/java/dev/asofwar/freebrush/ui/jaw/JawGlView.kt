@@ -14,6 +14,9 @@ import android.os.Handler
 import android.os.HandlerThread
 import android.util.Log
 import android.view.TextureView
+import dev.asofwar.freebrush.jaw.BakedJaw
+import dev.asofwar.freebrush.jaw.JawCamera
+import dev.asofwar.freebrush.jaw.JawCodec
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.concurrent.atomic.AtomicBoolean
@@ -27,7 +30,7 @@ import java.util.concurrent.atomic.AtomicReference
  * transparent halos of the light rings. Callers [submit] frames; only the latest one is drawn.
  */
 @SuppressLint("ViewConstructor")
-class JawGlView(context: Context, private val mesh: JawMesh, private val camera: JawCamera) :
+class JawGlView(context: Context, private val jaw: BakedJaw, private val camera: JawCamera) :
     TextureView(context), TextureView.SurfaceTextureListener {
 
     /**
@@ -75,7 +78,7 @@ class JawGlView(context: Context, private val mesh: JawMesh, private val camera:
             width = w; height = h
             try {
                 egl = Egl(surface)
-                renderer = Renderer(mesh, camera.minY)
+                renderer = Renderer(jaw, camera.minY)
                 drawLatest.run()
             } catch (t: Throwable) {
                 Log.e(TAG, "GL init failed", t)
@@ -152,12 +155,13 @@ class JawGlView(context: Context, private val mesh: JawMesh, private val camera:
         }
     }
 
-    private class Renderer(mesh: JawMesh, private val minY: Float) {
+    /** Draws the baked jaw: vertex and index bytes go to the GPU as they are, no conversion on the phone. */
+    private class Renderer(jaw: BakedJaw, private val minY: Float) {
         private val program: Int
         private val vao = IntArray(1)
         private val buffers = IntArray(2)
-        private val opaqueCount = mesh.pickableTriangles * 3
-        private val haloCount = mesh.indices.size - opaqueCount
+        private val opaqueCount = jaw.pickableTriangles * 3
+        private val haloCount = jaw.indices.size - opaqueCount
         private val uMvp: Int
         private val uMv: Int
         private val uRing: Int
@@ -165,6 +169,7 @@ class JawGlView(context: Context, private val mesh: JawMesh, private val camera:
         private val uGlow: Int
         private val uPass: Int
         private val uMinY: Int
+        private val uPosUnit: Int
 
         init {
             program = link(compile(GLES30.GL_VERTEX_SHADER, VERTEX), compile(GLES30.GL_FRAGMENT_SHADER, FRAGMENT))
@@ -175,25 +180,32 @@ class JawGlView(context: Context, private val mesh: JawMesh, private val camera:
             uGlow = GLES30.glGetUniformLocation(program, "uGlow")
             uPass = GLES30.glGetUniformLocation(program, "uPass")
             uMinY = GLES30.glGetUniformLocation(program, "uMinY")
+            uPosUnit = GLES30.glGetUniformLocation(program, "uPosUnit")
 
             GLES30.glGenVertexArrays(1, vao, 0)
             GLES30.glBindVertexArray(vao[0])
             GLES30.glGenBuffers(2, buffers, 0)
-            val vb = ByteBuffer.allocateDirect(mesh.vertices.size * 4).order(ByteOrder.nativeOrder()).asFloatBuffer()
-            vb.put(mesh.vertices).position(0)
+            // The baked file is little-endian, as are Android GPUs.
+            val vb = ByteBuffer.allocateDirect(jaw.gpuVertices.size).order(ByteOrder.LITTLE_ENDIAN)
+            vb.put(jaw.gpuVertices).position(0)
             GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, buffers[0])
-            GLES30.glBufferData(GLES30.GL_ARRAY_BUFFER, mesh.vertices.size * 4, vb, GLES30.GL_STATIC_DRAW)
-            val ib = ByteBuffer.allocateDirect(mesh.indices.size * 4).order(ByteOrder.nativeOrder()).asIntBuffer()
-            ib.put(mesh.indices).position(0)
+            GLES30.glBufferData(GLES30.GL_ARRAY_BUFFER, jaw.gpuVertices.size, vb, GLES30.GL_STATIC_DRAW)
+            val ib = ByteBuffer.allocateDirect(jaw.gpuIndices.size).order(ByteOrder.LITTLE_ENDIAN)
+            ib.put(jaw.gpuIndices).position(0)
             GLES30.glBindBuffer(GLES30.GL_ELEMENT_ARRAY_BUFFER, buffers[1])
-            GLES30.glBufferData(GLES30.GL_ELEMENT_ARRAY_BUFFER, mesh.indices.size * 4, ib, GLES30.GL_STATIC_DRAW)
-            val stride = JawMesh.STRIDE * 4
-            // position, normal, colour, ao, zone, outer
-            val layout = listOf(0 to 3, 3 to 3, 6 to 3, 9 to 1, 10 to 1, 11 to 1)
-            layout.forEachIndexed { loc, (offset, size) ->
+            GLES30.glBufferData(GLES30.GL_ELEMENT_ARRAY_BUFFER, jaw.gpuIndices.size, ib, GLES30.GL_STATIC_DRAW)
+            // Layout of JawCodec: position int16 x3, normal int8 x3, zone int8, colour uint8 x3, ao uint8, outer uint8.
+            val stride = JawCodec.VERTEX_BYTES
+            fun attr(loc: Int, size: Int, type: Int, normalized: Boolean, offset: Int) {
                 GLES30.glEnableVertexAttribArray(loc)
-                GLES30.glVertexAttribPointer(loc, size, GLES30.GL_FLOAT, false, stride, offset * 4)
+                GLES30.glVertexAttribPointer(loc, size, type, normalized, stride, offset)
             }
+            attr(0, 3, GLES30.GL_SHORT, false, 0)
+            attr(1, 3, GLES30.GL_BYTE, true, 6)
+            attr(4, 1, GLES30.GL_BYTE, false, 9)
+            attr(2, 3, GLES30.GL_UNSIGNED_BYTE, true, 10)
+            attr(3, 1, GLES30.GL_UNSIGNED_BYTE, true, 13)
+            attr(5, 1, GLES30.GL_UNSIGNED_BYTE, true, 14)
             GLES30.glBindVertexArray(0)
         }
 
@@ -208,6 +220,7 @@ class JawGlView(context: Context, private val mesh: JawMesh, private val camera:
             GLES30.glUniform1i(uSelected, f.selected)
             GLES30.glUniform1f(uGlow, f.glow)
             GLES30.glUniform1f(uMinY, minY)
+            GLES30.glUniform1f(uPosUnit, JawCodec.POSITION_UNIT)
             GLES30.glBindVertexArray(vao[0])
             val aspect = w.toFloat() / h
             val proj = camera.projection(aspect)
@@ -218,7 +231,7 @@ class JawGlView(context: Context, private val mesh: JawMesh, private val camera:
             GLES30.glEnable(GLES30.GL_BLEND)
             GLES30.glBlendFunc(GLES30.GL_ONE, GLES30.GL_ONE_MINUS_SRC_ALPHA)
             GLES30.glUniform1i(uPass, 1)
-            GLES30.glDrawElements(GLES30.GL_TRIANGLES, opaqueCount, GLES30.GL_UNSIGNED_INT, 0)
+            GLES30.glDrawElements(GLES30.GL_TRIANGLES, opaqueCount, GLES30.GL_UNSIGNED_SHORT, 0)
             GLES30.glClear(GLES30.GL_DEPTH_BUFFER_BIT)
 
             // 2. The model.
@@ -226,13 +239,13 @@ class JawGlView(context: Context, private val mesh: JawMesh, private val camera:
             GLES30.glFrontFace(GLES30.GL_CCW)
             GLES30.glDisable(GLES30.GL_BLEND)
             GLES30.glUniform1i(uPass, 0)
-            GLES30.glDrawElements(GLES30.GL_TRIANGLES, opaqueCount, GLES30.GL_UNSIGNED_INT, 0)
+            GLES30.glDrawElements(GLES30.GL_TRIANGLES, opaqueCount, GLES30.GL_UNSIGNED_SHORT, 0)
 
             // 3. Halos of the light rings: transparent, depth-tested but not written.
             GLES30.glEnable(GLES30.GL_BLEND)
             GLES30.glDepthMask(false)
             GLES30.glUniform1i(uPass, 2)
-            GLES30.glDrawElements(GLES30.GL_TRIANGLES, haloCount, GLES30.GL_UNSIGNED_INT, opaqueCount * 4)
+            GLES30.glDrawElements(GLES30.GL_TRIANGLES, haloCount, GLES30.GL_UNSIGNED_SHORT, opaqueCount * 2)
             GLES30.glDepthMask(true)
             GLES30.glDisable(GLES30.GL_BLEND)
             GLES30.glBindVertexArray(0)
@@ -285,6 +298,7 @@ class JawGlView(context: Context, private val mesh: JawMesh, private val camera:
             uniform mat4 uMvp;
             uniform mat4 uMv;
             uniform float uMinY;
+            uniform float uPosUnit;
             out vec3 vN;
             out vec3 vPos;
             out vec3 vColor;
@@ -293,15 +307,16 @@ class JawGlView(context: Context, private val mesh: JawMesh, private val camera:
             out float vOuter;
             out float vHeight;
             void main() {
-                vec4 p = uMv * vec4(aPos, 1.0);
+                vec3 pos = aPos * uPosUnit;
+                vec4 p = uMv * vec4(pos, 1.0);
                 vPos = p.xyz;
                 vN = mat3(uMv) * aNormal;
                 vColor = aColor;
                 vAo = aAo;
                 vZone = int(floor(aZone + 0.5));
                 vOuter = aOuter;
-                vHeight = aPos.y - uMinY;
-                gl_Position = uMvp * vec4(aPos, 1.0);
+                vHeight = pos.y - uMinY;
+                gl_Position = uMvp * vec4(pos, 1.0);
             }
         """.trimIndent()
 

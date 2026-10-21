@@ -1,9 +1,10 @@
-package dev.asofwar.freebrush.ui.jaw
+package dev.asofwar.freebrush.jaw
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlin.math.abs
 
 class JawModelTest {
     private val mesh = JawModel.build()
@@ -27,12 +28,13 @@ class JawModelTest {
 
     @Test
     fun normalsAreUnitLength() {
-        for (i in 0 until mesh.vertexCount step 97) {
+        val n = mesh.vertices
+        val bad = (0 until mesh.vertexCount).filter { i ->
             val o = i * JawMesh.STRIDE
-            val n = mesh.vertices
-            val l = n[o + 3] * n[o + 3] + n[o + 4] * n[o + 4] + n[o + 5] * n[o + 5]
-            assertEquals(1f, l, 1e-3f)
+            abs(n[o + 3] * n[o + 3] + n[o + 4] * n[o + 4] + n[o + 5] * n[o + 5] - 1f) > 1e-3f
         }
+        val first = bad.firstOrNull()?.let { i -> "vertex $i zone ${n[i * JawMesh.STRIDE + 10]} at ${mesh.x(i)}, ${mesh.y(i)}, ${mesh.z(i)}" }
+        assertTrue("${bad.size} vertices without a unit normal, first: $first", bad.isEmpty())
     }
 
     @Test

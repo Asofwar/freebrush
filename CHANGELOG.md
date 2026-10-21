@@ -28,3 +28,7 @@ All notable changes to this project are documented here. The format follows
   ridge, a spotlit stage with a glossy floor reflection and a slow turntable. Zone data moved from tinted enamel
   into light: a glowing line under every zone, mint when brushed, amber when missed. Tapping a tooth or a line
   turns the model to present that zone.
+- The jaw mesh is baked at build time by the pure-Kotlin `:jawmodel` module into a compact asset (16 bytes per
+  vertex, 16-bit indices, about 0.7 MB in the APK) instead of being generated on the phone (about 0.4 s of CPU per
+  start). Rendering is on demand: one entrance turn, finite animations, nothing drawn while the model is off
+  screen, so an idle model costs no CPU or GPU time.

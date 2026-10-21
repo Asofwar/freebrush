@@ -19,7 +19,7 @@ jobs:
           java-version: 21
       - uses: gradle/actions/setup-gradle@v4
       - name: Build and test
-        run: ./gradlew assembleDebug testDebugUnitTest --console=plain
+        run: ./gradlew :jawmodel:test assembleDebug testDebugUnitTest --console=plain
       - uses: actions/upload-artifact@v4
         with:
           name: FreeBrush-debug

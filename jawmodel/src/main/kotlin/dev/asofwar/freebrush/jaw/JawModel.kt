@@ -1,4 +1,4 @@
-package dev.asofwar.freebrush.ui.jaw
+package dev.asofwar.freebrush.jaw
 
 import kotlin.math.PI
 import kotlin.math.abs
@@ -17,22 +17,21 @@ import kotlin.math.tan
  * (position xyz, smooth normal xyz, base colour rgb, ambient occlusion, zone base, outer weight) and triangle indices.
  *
  * Coordinates are millimetres: x to the patient's left, y up, z forward. For tooth vertices the zone base is
- * the outer-surface zone of that tooth in [dev.asofwar.freebrush.data.Zones.ALL] order (the inner zone is base+1)
+ * the outer-surface zone of that tooth in the app's zone order (the inner zone is base+1)
  * and the outer weight blends between them; gum vertices have zone base -1; light rings use [RING] and [HALO].
  */
 class JawMesh(
     val vertices: FloatArray,
-    val indices: IntArray,
-    val triZone: IntArray,
+    override val indices: IntArray,
+    override val triZone: IntArray,
     /** Opaque triangles come first (teeth, gums, light-ring cores) and can be tapped; ring halos follow. */
-    val pickableTriangles: Int,
-) {
-    val vertexCount: Int get() = vertices.size / STRIDE
-    val triangleCount: Int get() = indices.size / 3
+    override val pickableTriangles: Int,
+) : JawGeometry {
+    override val vertexCount: Int get() = vertices.size / STRIDE
 
-    fun x(i: Int) = vertices[i * STRIDE]
-    fun y(i: Int) = vertices[i * STRIDE + 1]
-    fun z(i: Int) = vertices[i * STRIDE + 2]
+    override fun x(i: Int) = vertices[i * STRIDE]
+    override fun y(i: Int) = vertices[i * STRIDE + 1]
+    override fun z(i: Int) = vertices[i * STRIDE + 2]
 
     companion object {
         const val STRIDE = 12
@@ -77,8 +76,8 @@ object JawModel {
 
     private const val CONTACT_GAP = 0.15f
     private const val HALF_OPENING = 3.6f // distance of each occlusal plane from the middle
-    private const val U = 40
-    private const val V = 20
+    private const val U = 32
+    private const val V = 18
 
     // Porcelain rather than anatomy: near-white enamel with only a hint of warmth at the neck,
     // and a muted, soft-touch blush for the gums.
@@ -223,7 +222,8 @@ object JawModel {
         var prev = topRow
         val (tw, td) = profile(t.kind, 1f)
         val capColor = colorFor(t.kind, 1f)
-        for (ring in 1..k) {
+        // Stop one ring short of the centre: a ring of zero size would leave the tip with degenerate triangles.
+        for (ring in 1 until k) {
             val q = ring / k.toFloat()
             val scale = 1f - q
             val cur = IntArray(U)
@@ -288,7 +288,7 @@ object JawModel {
         val plane = if (upper) HALF_OPENING else -HALF_OPENING
         val dirQ = if (upper) 1f else -1f
         val y = plane + dirQ * (baseQ(upper) - 1.5f)
-        val around = if (halo) 14 else 12
+        val around = if (halo) 12 else 10
         for (side in listOf(1, -1)) {
             val sideTeeth = placed.filter { it.side == side }
             val s0 = 0.7f
@@ -296,7 +296,7 @@ object JawModel {
             for (outer in listOf(true, false)) {
                 val zone = (if (side > 0) 0 else 4) + (if (upper) 0 else 2) + (if (outer) 0 else 1)
                 val tag = (if (halo) JawMesh.HALO else JawMesh.RING) + zone
-                val steps = ((s1 - s0) / 0.35f).toInt()
+                val steps = ((s1 - s0) / 0.8f).toInt()
                 val first = b.vertexCount
                 val centers = ArrayList<FloatArray>()
                 for (k in 0..steps) {
@@ -332,7 +332,7 @@ object JawModel {
     private fun addGum(b: MeshBuilder, arch: Arch, upper: Boolean, placed: List<Placed>) {
         val sideTeeth = placed.filter { it.side > 0 }
         val end = sideTeeth.last().s1 + 4f
-        val step = 0.25f
+        val step = 0.32f
         val slices = (2 * end / step).toInt()
         val dirQ = if (upper) 1f else -1f // q grows away from the teeth: up for the upper gum
         val plane = if (upper) HALF_OPENING else -HALF_OPENING
@@ -549,14 +549,7 @@ internal class MeshBuilder {
         // the zone of a light ring, or gum.
         val triZone = IntArray(triSize / 3) { t ->
             val a = idx[t * 3]; val b = idx[t * 3 + 1]; val c = idx[t * 3 + 2]
-            val base = Math.round(v[a * s + 10])
-            when {
-                base < 0 -> JawMesh.GUM
-                base >= JawMesh.HALO -> base - JawMesh.HALO
-                base >= JawMesh.RING -> base - JawMesh.RING
-                (v[a * s + 11] + v[b * s + 11] + v[c * s + 11]) / 3 >= 0.5f -> base
-                else -> base + 1
-            }
+            JawCodec.zoneOf(Math.round(v[a * s + 10]), (v[a * s + 11] + v[b * s + 11] + v[c * s + 11]) / 3)
         }
         return JawMesh(v, idx, triZone, if (opaqueEnd >= 0) opaqueEnd else triSize / 3)
     }
