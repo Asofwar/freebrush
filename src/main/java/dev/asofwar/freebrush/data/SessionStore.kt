@@ -11,13 +11,13 @@ import org.json.JSONArray
 import java.io.File
 
 /**
- * Brushing history in a JSON file in app storage.
+ * Brushing history of one brush ([brushId]) in a JSON file in app storage.
  *
  * A few sessions a day stay well under a megabyte for years, so a plain file beats a database here.
  * Writes go to a temporary file first and replace the old one, so a crash never leaves half a file.
  */
-class SessionStore(context: Context) {
-    private val file = File(context.filesDir, "sessions.json")
+class SessionStore(context: Context, brushId: String) {
+    private val file = fileFor(context, brushId)
     private val lock = Mutex()
     private val _sessions = MutableStateFlow<List<BrushSession>>(emptyList())
 
@@ -51,6 +51,10 @@ class SessionStore(context: Context) {
             file.delete()
             _sessions.value = emptyList()
         }
+    }
+
+    companion object {
+        fun fileFor(context: Context, brushId: String) = File(context.filesDir, "sessions-$brushId.json")
     }
 
     /**

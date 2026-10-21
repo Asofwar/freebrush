@@ -122,11 +122,18 @@ private fun Bubbles(modifier: Modifier) {
 
 /** Scan for the brush with a radar pulse while looking. */
 @Composable
-fun PairScreen(onPick: (FoundDevice) -> Unit) {
+fun PairScreen(
+    mode: PairMode,
+    known: Set<String>,
+    nextNumber: Int,
+    onCancel: (() -> Unit)?,
+    onPick: (FoundDevice, label: String?) -> Unit,
+) {
     val context = LocalContext.current
     val found = remember { mutableStateListOf<FoundDevice>() }
     var error by remember { mutableStateOf<String?>(null) }
     var showAll by rememberSaveable { mutableStateOf(false) }
+    var picked by remember { mutableStateOf<FoundDevice?>(null) }
     LaunchedEffect(Unit) {
         try {
             scanDevices(context).collect { d ->
@@ -137,7 +144,7 @@ fun PairScreen(onPick: (FoundDevice) -> Unit) {
             error = e.message
         }
     }
-    val list = found.filter { showAll || it.looksLikeOclean }.sortedByDescending { it.rssi }
+    val list = found.filter { it.address !in known && (showAll || it.looksLikeOclean) }.sortedByDescending { it.rssi }
     LazyColumn(
         Modifier.fillMaxSize().safeDrawingPadding(),
         contentPadding = PaddingValues(20.dp),
@@ -146,7 +153,14 @@ fun PairScreen(onPick: (FoundDevice) -> Unit) {
         item(key = "radar") {
             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
                 Radar(Modifier.size(200.dp))
-                Text("Ищу щётку", style = MaterialTheme.typography.headlineMedium)
+                Text(
+                    when (mode) {
+                        PairMode.First -> "Ищу щётку"
+                        PairMode.Add -> "Ищу ещё одну щётку"
+                        PairMode.Replace -> "Ищу новую щётку"
+                    },
+                    style = MaterialTheme.typography.headlineMedium,
+                )
                 Spacer(Modifier.height(8.dp))
                 Text(
                     "Возьми щётку в руку или нажми кнопку, чтобы она проснулась. Приложение Oclean лучше закрыть: щётка держит только одно соединение.",
@@ -155,11 +169,12 @@ fun PairScreen(onPick: (FoundDevice) -> Unit) {
                 )
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 8.dp)) }
                 TextButton(onClick = { showAll = !showAll }) { Text(if (showAll) "Показать только Oclean" else "Показать все устройства") }
+                if (onCancel != null) TextButton(onClick = onCancel) { Text("Отмена") }
             }
         }
         items(list, key = { it.address }) { d ->
             Surface(
-                onClick = { onPick(d) },
+                onClick = { if (mode == PairMode.Replace) onPick(d, null) else picked = d },
                 shape = MaterialTheme.shapes.medium,
                 color = if (d.looksLikeOclean) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
                 modifier = Modifier.fillMaxWidth().animateItem(),
@@ -175,6 +190,16 @@ fun PairScreen(onPick: (FoundDevice) -> Unit) {
                 }
             }
         }
+    }
+    picked?.let { d ->
+        NameDialog(
+            title = "Чья это щётка?",
+            initial = "",
+            // The first brush may keep its Bluetooth name; the next ones get numbers to tell them apart.
+            fallback = if (mode == PairMode.First) null else "Щётка $nextNumber",
+            onDone = { label -> picked = null; onPick(d, label) },
+            onDismiss = { picked = null },
+        )
     }
 }
 

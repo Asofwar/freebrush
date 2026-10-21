@@ -46,7 +46,7 @@ import dev.asofwar.freebrush.data.BrushInfo
 import kotlinx.coroutines.launch
 
 @Composable
-fun BrushScreen(vm: AppViewModel, brush: BrushInfo, sync: SyncState) {
+fun BrushScreen(vm: AppViewModel, brush: BrushInfo, sync: SyncState, onPair: (PairMode) -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val log by vm.log.collectAsStateWithLifecycle()
@@ -55,7 +55,9 @@ fun BrushScreen(vm: AppViewModel, brush: BrushInfo, sync: SyncState) {
     val settings = brush.settingsHex?.let { hex(it) }
     val busy = sync is SyncState.Running || action is ActionState.Running
     var programmes by remember { mutableStateOf(false) }
-    var confirmForget by remember { mutableStateOf(false) }
+    var confirmReplace by remember { mutableStateOf(false) }
+    var confirmRemove by remember { mutableStateOf(false) }
+    var renaming by remember { mutableStateOf(false) }
     var confirmClear by remember { mutableStateOf(false) }
     val running = sync is SyncState.Running
 
@@ -63,7 +65,7 @@ fun BrushScreen(vm: AppViewModel, brush: BrushInfo, sync: SyncState) {
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        Box(Modifier.staggeredEntrance(0)) { ScreenHeader(brush.name ?: "Щётка", brush.model) }
+        Box(Modifier.staggeredEntrance(0)) { ScreenHeader(brush.title, brush.model) }
         Box(Modifier.staggeredEntrance(1)) { SyncChip(sync, brush, vm::syncNow) }
 
         SectionCard(Modifier.staggeredEntrance(2)) {
@@ -102,8 +104,11 @@ fun BrushScreen(vm: AppViewModel, brush: BrushInfo, sync: SyncState) {
                     context.startActivity(Intent.createChooser(send, "Экспорт истории"))
                 }
             }
-            ActionRow(Icons.Swap, "Сменить щётку") { confirmForget = true }
+            ActionRow(Icons.Edit, "Переименовать") { renaming = true }
+            ActionRow(Icons.Plus, "Добавить щётку другого человека") { onPair(PairMode.Add) }
+            ActionRow(Icons.Swap, "Заменить на новую щётку") { confirmReplace = true }
             ActionRow(Icons.Trash, "Стереть историю", MaterialTheme.colorScheme.error) { confirmClear = true }
+            ActionRow(Icons.Trash, "Удалить щётку", MaterialTheme.colorScheme.error) { confirmRemove = true }
         }
 
         SectionCard(Modifier.staggeredEntrance(5), title = "Об устройстве") {
@@ -133,13 +138,36 @@ fun BrushScreen(vm: AppViewModel, brush: BrushInfo, sync: SyncState) {
             onClose = { programmes = false },
         )
     }
-    if (confirmForget) {
+    if (renaming) {
+        NameDialog(
+            title = "Имя щётки",
+            initial = brush.label.orEmpty(),
+            fallback = null,
+            onDone = { renaming = false; vm.rename(it) },
+            onDismiss = { renaming = false },
+        )
+    }
+    if (confirmReplace) {
         AlertDialog(
-            onDismissRequest = { confirmForget = false },
-            confirmButton = { TextButton(onClick = { confirmForget = false; vm.forget() }) { Text("Сменить") } },
-            dismissButton = { TextButton(onClick = { confirmForget = false }) { Text("Отмена") } },
-            title = { Text("Сменить щётку?") },
-            text = { Text("Приложение отвяжет эту щётку и начнёт поиск. История чисток сохранится.") },
+            onDismissRequest = { confirmReplace = false },
+            confirmButton = { TextButton(onClick = { confirmReplace = false; onPair(PairMode.Replace) }) { Text("Искать") } },
+            dismissButton = { TextButton(onClick = { confirmReplace = false }) { Text("Отмена") } },
+            title = { Text("Заменить щётку?") },
+            text = {
+                Text(
+                    "Новая щётка займёт место «${brush.title}»: история, имя и уровень на экране щётки перейдут к ней, " +
+                        "старую приложение отвяжет. Для щётки другого человека выберите «Добавить щётку».",
+                )
+            },
+        )
+    }
+    if (confirmRemove) {
+        AlertDialog(
+            onDismissRequest = { confirmRemove = false },
+            confirmButton = { TextButton(onClick = { confirmRemove = false; vm.remove() }) { Text("Удалить") } },
+            dismissButton = { TextButton(onClick = { confirmRemove = false }) { Text("Отмена") } },
+            title = { Text("Удалить «${brush.title}»?") },
+            text = { Text("Щётка отвяжется, её история удалится с телефона. Отменить это нельзя. На самой щётке останутся последние 32 чистки.") },
         )
     }
     if (confirmClear) {
@@ -148,7 +176,7 @@ fun BrushScreen(vm: AppViewModel, brush: BrushInfo, sync: SyncState) {
             confirmButton = { TextButton(onClick = { confirmClear = false; vm.clearHistory() }) { Text("Стереть") } },
             dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("Отмена") } },
             title = { Text("Стереть историю?") },
-            text = { Text("Все чистки удалятся с телефона, отменить это нельзя. На щётке останутся только последние 32.") },
+            text = { Text("Все чистки «${brush.title}» удалятся с телефона, отменить это нельзя. На щётке останутся только последние 32.") },
         )
     }
 }

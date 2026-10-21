@@ -6,6 +6,18 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Several brushes, one per person: each has its own name, history, statistics, settings and growth level. Chips at
+  the top switch between them and the greeting uses the name. When the app opens with several brushes it listens for
+  a few seconds which of them are awake and syncs those. "Replace with a new brush" moves a person's history, name and
+  level to their new brush; "Delete brush" removes it with its history. Data of 0.1 moves over on the first start.
+
+### Fixed
+
+- Text outside cards (the welcome and brush search titles) was black on the dark theme.
+- Release notes in the update dialog keep each list item on one line.
+
 ## [0.1.0] - 2026-10-21
 
 ### Added

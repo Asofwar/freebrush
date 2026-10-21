@@ -37,6 +37,9 @@ sealed interface UpdateState {
     data class Ready(val release: Release, val apk: File) : UpdateState
     data class Installing(val release: Release) : UpdateState
 
+    /** Android wants the user to confirm the install; the screen starts [intent] once it is visible. */
+    data class Confirm(val release: Release, val intent: Intent) : UpdateState
+
     /** A download or install that went wrong, shown in the update dialog. */
     data class Error(val text: String) : UpdateState
 }
@@ -95,7 +98,7 @@ class Updater private constructor(private val context: Context) {
                     Log.w(TAG, "Update check failed", error)
                     if (manual) UpdateState.Message(error?.message ?: "Не удалось проверить обновления") else UpdateState.Idle
                 }
-                current == null || Version.shouldOffer(current, release.version, manual) -> UpdateState.Available(release)
+                current == null || Version.shouldOffer(current, release.version) -> UpdateState.Available(release)
                 manual -> UpdateState.Message("Установлена последняя версия, ${BuildConfig.VERSION_NAME}")
                 else -> UpdateState.Idle
             }
@@ -196,6 +199,17 @@ class Updater private constructor(private val context: Context) {
         }
     }
 
+    /** The screen started the system confirmation; the result comes back through [InstallResultReceiver]. */
+    fun confirmShown() {
+        val confirm = _state.value as? UpdateState.Confirm ?: return
+        _state.value = UpdateState.Installing(confirm.release)
+    }
+
+    internal fun onConfirmNeeded(intent: Intent) {
+        val installing = _state.value as? UpdateState.Installing ?: return
+        _state.value = UpdateState.Confirm(installing.release, intent)
+    }
+
     internal fun onInstallResult(status: Int, message: String?) {
         val installing = _state.value as? UpdateState.Installing ?: return
         val apk = File(dir, "FreeBrush-${installing.release.version}.apk")
@@ -221,19 +235,19 @@ class Updater private constructor(private val context: Context) {
     }
 }
 
-/** Receives the outcome of the install session; shows the system confirmation when Android asks for one. */
+/**
+ * Receives the outcome of the install session. A confirmation Android asks for goes to the update state, and the
+ * screen shows it: started from here it would be silently blocked while the app is in the background.
+ */
 class InstallResultReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
+        val updater = Updater.get(context)
         val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)
         if (status == PackageInstaller.STATUS_PENDING_USER_ACTION) {
             val confirm = IntentCompat.getParcelableExtra(intent, Intent.EXTRA_INTENT, Intent::class.java)
-            try {
-                context.startActivity(confirm?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) ?: return)
-            } catch (e: RuntimeException) {
-                Updater.get(context).onInstallResult(PackageInstaller.STATUS_FAILURE, e.message)
-            }
+            if (confirm != null) updater.onConfirmNeeded(confirm) else updater.onInstallResult(PackageInstaller.STATUS_FAILURE, null)
             return
         }
-        Updater.get(context).onInstallResult(status, intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE))
+        updater.onInstallResult(status, intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE))
     }
 }

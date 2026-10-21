@@ -62,7 +62,7 @@ fun TodayScreen(
     ) {
         Box(Modifier.staggeredEntrance(0)) {
             ScreenHeader(
-                greeting(),
+                greeting() + (brush.label?.let { ", $it" } ?: ""),
                 today.format(DateTimeFormatter.ofPattern("EEEE, d MMMM", Locale.forLanguageTag("ru"))).replaceFirstChar { it.uppercase() },
             )
         }

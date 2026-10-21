@@ -27,15 +27,14 @@ class ReleaseTest {
     @Test
     fun offers() {
         val release = Version(0, 2, 0)
-        assertTrue(Version.shouldOffer(Version(0, 1, 9), release, manual = false))
-        assertTrue(Version.shouldOffer(Version(0, 1, 10, dev = true), release, manual = false))
-        assertFalse(Version.shouldOffer(Version(0, 2, 0), release, manual = true))
-        assertFalse(Version.shouldOffer(Version(0, 3, 0), release, manual = true))
-        // A dev build of the same version: swapped for the release only when the user asks.
-        assertFalse(Version.shouldOffer(Version(0, 2, 0, dev = true), release, manual = false))
-        assertTrue(Version.shouldOffer(Version(0, 2, 0, dev = true), release, manual = true))
+        assertTrue(Version.shouldOffer(Version(0, 1, 9), release))
+        assertTrue(Version.shouldOffer(Version(0, 1, 10, dev = true), release))
+        assertFalse(Version.shouldOffer(Version(0, 2, 0), release))
+        assertFalse(Version.shouldOffer(Version(0, 3, 0), release))
+        // A dev build of the same numbers may hold newer code and data: never "update" it back to the release.
+        assertFalse(Version.shouldOffer(Version(0, 2, 0, dev = true), release))
         // Numbers compare as numbers, not text.
-        assertTrue(Version.shouldOffer(Version(0, 9, 0), Version(0, 10, 0), manual = false))
+        assertTrue(Version.shouldOffer(Version(0, 9, 0), Version(0, 10, 0)))
     }
 
     @Test

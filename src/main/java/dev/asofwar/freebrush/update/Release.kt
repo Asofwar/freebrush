@@ -14,14 +14,12 @@ data class Version(val major: Int, val minor: Int, val patch: Int, val dev: Bool
         }
 
         /**
-         * Whether [latest] should be offered to someone running [current]. A newer version always is. The same
-         * numbers are offered only to a development build and only when the user asked, to swap it for the
-         * published release; automatic checks leave a test build alone.
+         * Whether [latest] should be offered to someone running [current]: only higher numbers. A development build
+         * (`X.Y.Z-dev`) is built from release X.Y.Z or from newer code, so the release with the same numbers would be
+         * a step back, possibly to an older data format.
          */
-        fun shouldOffer(current: Version, latest: Version, manual: Boolean): Boolean {
-            val order = compareValuesBy(latest, current, Version::major, Version::minor, Version::patch)
-            return order > 0 || (order == 0 && current.dev && manual)
-        }
+        fun shouldOffer(current: Version, latest: Version): Boolean =
+            compareValuesBy(latest, current, Version::major, Version::minor, Version::patch) > 0
     }
 }
 

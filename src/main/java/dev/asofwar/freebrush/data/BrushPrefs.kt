@@ -3,10 +3,19 @@ package dev.asofwar.freebrush.data
 import android.content.Context
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.File
+import java.util.UUID
 
-/** What the app knows about the paired brush; survives restarts. */
+/** What the app knows about one person's brush; survives restarts. */
 data class BrushInfo(
+    /** Stable key of this brush's record and history. Stays when the person replaces the brush itself. */
+    val id: String,
     val address: String,
+    /** Name the user gave, usually its owner's. */
+    val label: String? = null,
+    /** Bluetooth name of the brush. */
     val name: String? = null,
     val model: String? = null,
     val firmware: String? = null,
@@ -23,51 +32,163 @@ data class BrushInfo(
     /** Growth points FreeBrush has collected from the brush; written back to it as the base of its level. */
     val growthTotal: Int = 0,
     val lastSyncMillis: Long? = null,
-)
+) {
+    val title: String get() = label ?: name ?: "Щётка"
 
-class BrushPrefs(context: Context) {
-    private val prefs = context.getSharedPreferences("brush", Context.MODE_PRIVATE)
-    private val _brush = MutableStateFlow(read())
-    val brush: StateFlow<BrushInfo?> = _brush
+    /** The same person's record moved to another physical brush: history, name and level stay. */
+    fun replacedBy(address: String, name: String?) = BrushInfo(
+        id = id,
+        address = address,
+        label = label,
+        name = name,
+        growthTotal = growthTotal,
+    )
 
-    private fun read(): BrushInfo? {
-        val address = prefs.getString("address", null) ?: return null
-        fun int(key: String) = if (prefs.contains(key)) prefs.getInt(key, 0) else null
-        return BrushInfo(
+    fun toJson(): JSONObject = JSONObject().apply {
+        put("id", id)
+        put("address", address)
+        put("label", label)
+        put("name", name)
+        put("model", model)
+        put("firmware", firmware)
+        put("hardware", hardware)
+        put("battery", battery)
+        put("headDays", headDays)
+        put("headUses", headUses)
+        put("headWear", headWear)
+        put("headWearMax", headWearMax)
+        put("settings", settingsHex)
+        put("growth", growthTotal)
+        put("lastSync", lastSyncMillis)
+    }
+
+    companion object {
+        fun newId(): String = UUID.randomUUID().toString().substring(0, 8)
+
+        fun fromJson(o: JSONObject): BrushInfo {
+            fun str(key: String) = if (o.isNull(key)) null else o.optString(key)
+            fun int(key: String) = if (o.isNull(key)) null else o.optInt(key)
+            return BrushInfo(
+                id = o.getString("id"),
+                address = o.getString("address"),
+                label = str("label"),
+                name = str("name"),
+                model = str("model"),
+                firmware = str("firmware"),
+                hardware = str("hardware"),
+                battery = int("battery"),
+                headDays = int("headDays"),
+                headUses = int("headUses"),
+                headWear = int("headWear"),
+                headWearMax = int("headWearMax"),
+                settingsHex = str("settings"),
+                growthTotal = o.optInt("growth", 0),
+                lastSyncMillis = if (o.isNull("lastSync")) null else o.optLong("lastSync"),
+            )
+        }
+    }
+}
+
+/**
+ * The brushes the app knows, one per person, and which one the screens show. Stored as JSON in preferences;
+ * each brush's history lives in its own file (see [SessionStore]).
+ */
+class BrushPrefs(private val context: Context) {
+    private val prefs = context.getSharedPreferences("brushes", Context.MODE_PRIVATE)
+    private var list: List<BrushInfo>
+    private var currentId: String?
+
+    init {
+        migrateSingleBrush()
+        list = read()
+        currentId = prefs.getString(KEY_CURRENT, null)?.takeIf { id -> list.any { it.id == id } } ?: list.firstOrNull()?.id
+    }
+
+    private val _brushes = MutableStateFlow(list)
+    val brushes: StateFlow<List<BrushInfo>> = _brushes
+
+    private val _current = MutableStateFlow(list.firstOrNull { it.id == currentId })
+    /** The brush the screens show. */
+    val current: StateFlow<BrushInfo?> = _current
+
+    fun get(id: String): BrushInfo? = list.firstOrNull { it.id == id }
+
+    /** Adds a brush and shows it. */
+    @Synchronized
+    fun add(info: BrushInfo) {
+        list = list + info
+        currentId = info.id
+        save()
+    }
+
+    /** Applies [change] to the stored record of brush [id], if it is still there. */
+    @Synchronized
+    fun update(id: String, change: (BrushInfo) -> BrushInfo) {
+        if (list.none { it.id == id }) return
+        list = list.map { if (it.id == id) change(it) else it }
+        save()
+    }
+
+    @Synchronized
+    fun select(id: String) {
+        if (list.none { it.id == id }) return
+        currentId = id
+        save()
+    }
+
+    /** Forgets brush [id]; its history file is the caller's to delete. */
+    @Synchronized
+    fun remove(id: String) {
+        list = list.filterNot { it.id == id }
+        if (currentId == id) currentId = list.firstOrNull()?.id
+        save()
+    }
+
+    private fun read(): List<BrushInfo> {
+        val text = prefs.getString(KEY_LIST, null) ?: return emptyList()
+        val arr = JSONArray(text)
+        return List(arr.length()) { BrushInfo.fromJson(arr.getJSONObject(it)) }
+    }
+
+    private fun save() {
+        val arr = JSONArray()
+        list.forEach { arr.put(it.toJson()) }
+        prefs.edit().putString(KEY_LIST, arr.toString()).putString(KEY_CURRENT, currentId).apply()
+        _brushes.value = list
+        _current.value = list.firstOrNull { it.id == currentId }
+    }
+
+    /** Versions up to 0.1 kept one brush in the "brush" preferences and its history in sessions.json. */
+    private fun migrateSingleBrush() {
+        val old = context.getSharedPreferences("brush", Context.MODE_PRIVATE)
+        val address = old.getString("address", null) ?: return
+        if (prefs.contains(KEY_LIST)) return
+        fun int(key: String) = if (old.contains(key)) old.getInt(key, 0) else null
+        val info = BrushInfo(
+            // Derived from the address, so a migration cut short by a crash finds the same history file next time.
+            id = address.replace(":", "").lowercase(),
             address = address,
-            name = prefs.getString("name", null),
-            model = prefs.getString("model", null),
-            firmware = prefs.getString("firmware", null),
-            hardware = prefs.getString("hardware", null),
+            name = old.getString("name", null),
+            model = old.getString("model", null),
+            firmware = old.getString("firmware", null),
+            hardware = old.getString("hardware", null),
             battery = int("battery"),
             headDays = int("headDays"),
             headUses = int("headUses"),
             headWear = int("headWear"),
             headWearMax = int("headWearMax"),
-            settingsHex = prefs.getString("settings", null),
-            growthTotal = prefs.getInt("growth", 0),
-            lastSyncMillis = if (prefs.contains("lastSync")) prefs.getLong("lastSync", 0) else null,
+            settingsHex = old.getString("settings", null),
+            growthTotal = old.getInt("growth", 0),
+            lastSyncMillis = if (old.contains("lastSync")) old.getLong("lastSync", 0) else null,
         )
+        File(context.filesDir, "sessions.json").takeIf { it.exists() }?.renameTo(SessionStore.fileFor(context, info.id))
+        // commit(): the new list must be on disk before the old record goes.
+        prefs.edit().putString(KEY_LIST, JSONArray().put(info.toJson()).toString()).putString(KEY_CURRENT, info.id).commit()
+        old.edit().clear().commit()
     }
 
-    fun save(info: BrushInfo?) {
-        prefs.edit().clear().apply {
-            if (info != null) {
-                putString("address", info.address)
-                info.name?.let { putString("name", it) }
-                info.model?.let { putString("model", it) }
-                info.firmware?.let { putString("firmware", it) }
-                info.hardware?.let { putString("hardware", it) }
-                info.battery?.let { putInt("battery", it) }
-                info.headDays?.let { putInt("headDays", it) }
-                info.headUses?.let { putInt("headUses", it) }
-                info.headWear?.let { putInt("headWear", it) }
-                info.headWearMax?.let { putInt("headWearMax", it) }
-                info.settingsHex?.let { putString("settings", it) }
-                putInt("growth", info.growthTotal)
-                info.lastSyncMillis?.let { putLong("lastSync", it) }
-            }
-        }.apply()
-        _brush.value = info
+    private companion object {
+        const val KEY_LIST = "list"
+        const val KEY_CURRENT = "current"
     }
 }

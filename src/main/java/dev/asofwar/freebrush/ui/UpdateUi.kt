@@ -17,6 +17,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -111,6 +112,14 @@ fun UpdateDialog() {
             confirmButton = { TextButton(onClick = { updater.install(context) }) { Text("Установить") } },
             dismissButton = { TextButton(onClick = updater::dismiss) { Text("Позже") } },
         )
+        is UpdateState.Confirm -> LaunchedEffect(s) {
+            try {
+                context.startActivity(s.intent)
+                updater.confirmShown()
+            } catch (e: android.content.ActivityNotFoundException) {
+                updater.dismiss()
+            }
+        }
         is UpdateState.Installing -> AlertDialog(
             onDismissRequest = updater::dismiss,
             title = { Text("Установка ${s.release.version}") },
@@ -130,9 +139,18 @@ fun UpdateDialog() {
 
 @Composable
 private fun ReleaseNotes(release: Release) {
-    // The notes are the release's CHANGELOG section; markdown markers would only get in the way here.
-    val text = release.notes
-        .lineSequence()
+    // The notes are the release's CHANGELOG section: hard-wrapped list items are joined back into one line each,
+    // and markdown markers would only get in the way here.
+    val lines = mutableListOf<String>()
+    for (raw in release.notes.lines()) {
+        val line = raw.trimEnd()
+        if (line.startsWith("  ") && lines.lastOrNull()?.isNotEmpty() == true) {
+            lines[lines.lastIndex] = lines.last() + " " + line.trim()
+        } else {
+            lines += line
+        }
+    }
+    val text = lines
         .map { it.removePrefix("### ").replace(Regex("^- "), "• ").replace("`", "") }
         .joinToString("\n")
         .trim()

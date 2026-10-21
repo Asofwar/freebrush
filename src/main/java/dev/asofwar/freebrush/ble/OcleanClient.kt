@@ -51,9 +51,13 @@ class SyncResult(
  */
 class OcleanClient(private val context: Context) {
 
-    suspend fun sync(address: String, growthTotal: Int, onStep: (String) -> Unit): SyncResult = withBrush(address, onStep) { s ->
-        exchange(s, growthTotal, onStep)
-    }
+    /**
+     * Reads everything from the brush. [onGrowth] gets the new growth total the moment the brush has taken it, before
+     * the rest of the sync finishes: from then on the brush counts from zero, so the caller must store it even if the
+     * sync is cancelled or fails afterwards.
+     */
+    suspend fun sync(address: String, growthTotal: Int, onGrowth: (Int) -> Unit, onStep: (String) -> Unit): SyncResult =
+        withBrush(address, onStep) { s -> exchange(s, growthTotal, onGrowth, onStep) }
 
     /** A connected brush, for writing settings: one command in flight at a time, as the brush expects. */
     inner class Link internal constructor(private val s: GattSession, private val onStep: (String) -> Unit) {
@@ -156,7 +160,7 @@ class OcleanClient(private val context: Context) {
         )
     }
 
-    private suspend fun exchange(s: GattSession, growthTotal: Int, onStep: (String) -> Unit): SyncResult = coroutineScope {
+    private suspend fun exchange(s: GattSession, growthTotal: Int, onGrowth: (Int) -> Unit, onStep: (String) -> Unit): SyncResult = coroutineScope {
         // Log every notification: the log is what users attach to device reports.
         val logger = launchLogger(s, onStep)
 
@@ -185,7 +189,7 @@ class OcleanClient(private val context: Context) {
         onStep("Чтение чисток…")
         val sessions = readSessions(s, tzIndex, onStep)
 
-        val growth = if (BrushControls.hasGrowth(hardware)) syncGrowth(s, growthTotal, onStep) else null
+        val growth = if (BrushControls.hasGrowth(hardware)) syncGrowth(s, growthTotal, onStep)?.also(onGrowth) else null
         onStep("Готово: заряд ${battery ?: "?"} %, чисток в щётке ${sessions.size}")
 
         logger.cancel()
@@ -202,15 +206,18 @@ class OcleanClient(private val context: Context) {
 
     /**
      * Adds the brush's new growth points to [total] and writes the sum back as its base, which also clears the
-     * brush's counter. Returns the new total only when the brush confirmed it, so points are never counted twice;
-     * if the read fails nothing is written, so no points are lost either.
+     * brush's counter. Returns the new total only when the brush took it, so points are never counted twice; if the
+     * read fails nothing is written, so no points are lost either. A missing ack is checked by reading the counter
+     * again: back at zero means the brush took the new base.
      */
     private suspend fun syncGrowth(s: GattSession, total: Int, onStep: (String) -> Unit): Int? {
         val reply = request(s, WRITE, BrushControls.GROWTH_READ, onStep) { BrushControls.parseGrowth(it.value) != null } ?: return null
         val added = BrushControls.parseGrowth(reply.value) ?: return null
         val newTotal = (total + added).coerceAtMost(0xFFFF)
         val cmd = BrushControls.growthBase(newTotal)
-        val ok = request(s, WRITE, cmd, onStep) { OcleanProtocol.isAck(it.value, cmd) } != null
+        val ok = request(s, WRITE, cmd, onStep) { OcleanProtocol.isAck(it.value, cmd) } != null ||
+            (added > 0 && request(s, WRITE, BrushControls.GROWTH_READ, onStep) { BrushControls.parseGrowth(it.value) != null }
+                ?.let { BrushControls.parseGrowth(it.value) } == 0)
         onStep(if (ok) "Очки роста: +$added, всего $newTotal" else "Щётка не подтвердила очки роста")
         return if (ok) newTotal else null
     }

@@ -44,6 +44,8 @@ class MainActivity : ComponentActivity() {
         intent.getStringExtra("send")?.let { list -> vm.sendRaw(list.split(',').map { it.trim() }.filter { it.isNotEmpty() }) }
         intent.getStringExtra("growth")?.toIntOrNull()?.let { vm.setGrowthTotal(it) }
         if (intent.getStringExtra("update") == "check") Updater.get(this).check()
+        // `fakebrush Аня` adds a brush record with no device behind it, to try the switcher with one real brush.
+        intent.getStringExtra("fakebrush")?.let { vm.addFakeBrush(it) }
         // `prog 231|2:30,16:30` sends programme 231 with gear:seconds steps.
         intent.getStringExtra("prog")?.let { spec ->
             val (num, steps) = spec.split('|')
