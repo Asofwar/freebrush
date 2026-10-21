@@ -1,0 +1,45 @@
+name: Device report
+description: Report how FreeBrush works with your Oclean brush.
+labels: ["device-report"]
+body:
+  - type: input
+    id: model
+    attributes:
+      label: Brush model
+      description: Name on the box and the model ID shown on the Brush tab (for example OCLEANY3PB).
+      placeholder: Oclean X Pro Digital, OCLEANY3PB
+    validations:
+      required: true
+  - type: input
+    id: firmware
+    attributes:
+      label: Firmware version
+      description: Shown on the Brush tab.
+  - type: dropdown
+    id: result
+    attributes:
+      label: What works
+      multiple: true
+      options:
+        - Brush is found
+        - Connects
+        - Battery level
+        - Sessions arrive
+        - Score is correct
+        - Duration is correct
+        - Zones look right
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Sync log
+      description: Copy the sync log from the Brush tab. It contains raw packets and no personal data apart from the brush's Bluetooth address.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: What is wrong
+      description: For example, the official app showed score 87 and duration 2:10 for the same session.
