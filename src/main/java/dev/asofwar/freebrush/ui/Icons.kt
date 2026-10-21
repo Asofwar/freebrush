@@ -2,31 +2,48 @@ package dev.asofwar.freebrush.ui
 
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.unit.dp
 
-/** The three tab icons, drawn here to avoid pulling in the large material-icons-extended library. */
+/**
+ * Line icons drawn for this app (24-unit grid, 2-unit round strokes), instead of pulling in the large
+ * material-icons-extended library. Icon() tints them, so the stroke colour here does not matter.
+ */
 object Icons {
-    private fun icon(name: String, path: String): ImageVector =
-        ImageVector.Builder(name, 24.dp, 24.dp, 24f, 24f)
-            .addPath(PathParser().parsePathString(path).toNodes(), fill = SolidColor(Color.Black))
-            .build()
+    private fun line(name: String, vararg paths: String): ImageVector =
+        ImageVector.Builder(name, 24.dp, 24.dp, 24f, 24f).apply {
+            for (p in paths) {
+                addPath(
+                    PathParser().parsePathString(p).toNodes(),
+                    stroke = SolidColor(Color.Black),
+                    strokeLineWidth = 2f,
+                    strokeLineCap = StrokeCap.Round,
+                    strokeLineJoin = StrokeJoin.Round,
+                )
+            }
+        }.build()
 
-    // Sun over a horizon: "today".
-    val Today = icon(
+    val Today = line(
         "today",
-        "M12,7a5,5 0,1 1,0 10a5,5 0,1 1,0 -10zM11,1h2v3h-2zM11,20h2v3h-2zM1,11h3v2h-3zM20,11h3v2h-3z" +
-            "M4.2,5.6l1.4,-1.4l2.1,2.1l-1.4,1.4zM16.3,17.7l1.4,-1.4l2.1,2.1l-1.4,1.4z" +
-            "M4.2,18.4l2.1,-2.1l1.4,1.4l-2.1,2.1zM16.3,6.3l2.1,-2.1l1.4,1.4l-2.1,2.1z",
+        "M12,8a4,4 0,1 1,0 8a4,4 0,1 1,0 -8z",
+        "M12,2.5v2M12,19.5v2M2.5,12h2M19.5,12h2M5.3,5.3l1.4,1.4M17.3,17.3l1.4,1.4M5.3,18.7l1.4,-1.4M17.3,6.7l1.4,-1.4",
     )
-
-    // Three bars of different height: "history".
-    val History = icon("history", "M4,13h4v8h-4zM10,7h4v14h-4zM16,3h4v18h-4z")
-
-    // Toothbrush: bristle head on a handle.
-    val Brush = icon(
-        "brush",
-        "M10,9h4v12a2,2 0,0 1,-4 0zM9,4h6a1,1 0,0 1,1 1v3h-8v-3a1,1 0,0 1,1 -1zM9,1h1.5v2.5h-1.5zM11.25,1h1.5v2.5h-1.5zM13.5,1h1.5v2.5h-1.5z",
-    )
+    val Moon = line("moon", "M20,14.5A8,8 0,1 1,9.5 4a6.5,6.5 0,0 0,10.5 10.5z")
+    val History = line("history", "M5,20v-6M12,20v-11M19,20v-15")
+    val Brush = line("brush", "M12,11v10", "M9,3h6v8h-6z", "M10.5,5.5h3M10.5,8.5h3")
+    val Sync = line("sync", "M20,12a8,8 0,1 1,-2.4,-5.7", "M20,4v4.5h-4.5")
+    val Check = line("check", "M5,12.5l4.5,4.5l9.5,-10")
+    val Warning = line("warning", "M12,3.5l9,16h-18z", "M12,10v4.5", "M12,17.3v0.2")
+    val Flame = line("flame", "M12,21a6,6 0,0 1,-6 -6c0,-3.5 3,-5 3,-9c3,1.5 4,3.5 4,5.5c1,-0.8 1.5,-2 1.5,-3c2,1.7 3.5,4 3.5,6.5a6,6 0,0 1,-6 6z")
+    val Star = line("star", "M12,3.5l2.6,5.4l5.9,0.8l-4.3,4.1l1,5.9l-5.2,-2.8l-5.2,2.8l1,-5.9l-4.3,-4.1l5.9,-0.8z")
+    val Clock = line("clock", "M12,3a9,9 0,1 1,0 18a9,9 0,1 1,0 -18z", "M12,7.5v5l3,2")
+    val Share = line("share", "M12,3v12", "M7.5,7.5l4.5,-4.5l4.5,4.5", "M5,13v5.5a2,2 0,0 0,2 2h10a2,2 0,0 0,2 -2v-5.5")
+    val Trash = line("trash", "M4,7h16", "M9.5,7v-3h5v3", "M6,7l1,13.5h10l1,-13.5")
+    val Swap = line("swap", "M7,4l-3,3l3,3", "M4,7h13", "M17,14l3,3l-3,3", "M20,17h-13")
+    val Bluetooth = line("bluetooth", "M7,7.5l10,9l-5,4.5v-18l5,4.5l-10,9")
+    val Chevron = line("chevron", "M6,9l6,6l6,-6")
+    val Battery = line("battery", "M3.5,8h14a1.5,1.5 0,0 1,1.5 1.5v5a1.5,1.5 0,0 1,-1.5 1.5h-14a1.5,1.5 0,0 1,-1.5 -1.5v-5a1.5,1.5 0,0 1,1.5 -1.5z", "M21.5,11v2")
 }

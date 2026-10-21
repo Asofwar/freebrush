@@ -14,3 +14,7 @@ All notable changes to this project are documented here. The format follows
   sessions with score, duration, programme and zones; battery; brush-head days, sessions and wear counter;
   clock and time-zone sync.
 - Sync log with raw packets on the Brush tab, for device reports.
+- Redesign: brand teal theme (light and dark), animated score ring that counts up, morning/evening goal slots,
+  a top-down map of both jaws with per-zone time, growing day bars, staggered card entrance, animated tab
+  switching, session details in a bottom sheet, brush-head wear gauge with a replacement hint, radar animation
+  while scanning, welcome screen with rising bubbles, haptic feedback when new sessions arrive.

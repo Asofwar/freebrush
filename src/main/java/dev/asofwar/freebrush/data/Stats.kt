@@ -42,3 +42,17 @@ fun List<BrushSession>.toCsv(): String = buildString {
 }
 
 fun formatDuration(sec: Int): String = "%d:%02d".format(sec / 60, sec % 60)
+
+/**
+ * Seconds spent on each zone. The X Pro Digital reports seconds already (they add up to about the time brushed);
+ * older models report weights summing to about 100 whatever the duration, which are scaled to the time brushed.
+ */
+fun BrushSession.zoneSeconds(): List<Int> {
+    val total = zones.sum()
+    if (total <= 0) return emptyList()
+    if (total <= durationSec + 10) return zones
+    return zones.map { (it.toDouble() / total * durationSec).toInt() }
+}
+
+/** Sessions before 15:00 count as morning, later ones as evening. */
+fun BrushSession.isMorning(): Boolean = time.hour < 15
