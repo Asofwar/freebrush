@@ -87,10 +87,13 @@ object OcleanProtocol {
         return raw.toString(Charsets.US_ASCII).trimEnd('\u0000', ' ').ifEmpty { null }
     }
 
-    /** Ack of a command: the command id followed by ASCII "OK". */
+    /**
+     * Ack of a command: the command id, optionally the value that was written (the X Pro Digital echoes it,
+     * e.g. `0209ec4f4b`), and ASCII "OK" at the end.
+     */
     fun isAck(packet: ByteArray, command: ByteArray): Boolean =
-        packet.size == 4 && packet[0] == command[0] && packet[1] == command[1] &&
-            packet[2] == 'O'.code.toByte() && packet[3] == 'K'.code.toByte()
+        packet.size in 4..8 && packet[0] == command[0] && packet[1] == command[1] &&
+            packet[packet.size - 2] == 'O'.code.toByte() && packet[packet.size - 1] == 'K'.code.toByte()
 
     fun hasType(packet: ByteArray, type: ByteArray): Boolean =
         packet.size >= 2 && packet[0] == type[0] && packet[1] == type[1]
@@ -102,6 +105,8 @@ object OcleanProtocol {
     }
 
     class Settings(
+        /** The 34 data bytes as received, kept so newly understood fields can be read from stored settings. */
+        val raw: ByteArray,
         val schemeId: Int,
         val overPressureAlert: Boolean,
         val areaRemind: Boolean,
@@ -150,6 +155,7 @@ object OcleanProtocol {
     private val TYPE_SETTINGS = hex("0302")
 
     fun decodeSettings(d: ByteArray): Settings = Settings(
+        raw = d.copyOf(SETTINGS_SIZE),
         schemeId = d.u8(11),
         overPressureAlert = d.u8(22) != 0,
         areaRemind = d.u8(23) != 0,

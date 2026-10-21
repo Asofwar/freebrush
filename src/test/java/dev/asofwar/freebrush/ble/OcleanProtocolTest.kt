@@ -53,6 +53,10 @@ class OcleanProtocolTest {
     fun ack() {
         assertTrue(OcleanProtocol.isAck(hex("02024f4b"), OcleanProtocol.CMD_ACK_SESSIONS))
         assertFalse(OcleanProtocol.isAck(hex("02014f4b"), OcleanProtocol.CMD_ACK_SESSIONS))
+        // X Pro Digital echoes the written value before "OK".
+        assertTrue(OcleanProtocol.isAck(hex("0209ec4f4b"), hex("0209ec")))
+        assertTrue(OcleanProtocol.isAck(hex("0216034f4b"), hex("021603")))
+        assertTrue(OcleanProtocol.isAck(hex("02174f4b"), hex("021700f1")))
     }
 
     @Test

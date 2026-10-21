@@ -37,7 +37,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dev.asofwar.freebrush.ActionState
 import dev.asofwar.freebrush.AppViewModel
+import dev.asofwar.freebrush.ble.BrushControls
+import dev.asofwar.freebrush.ble.hex
 import dev.asofwar.freebrush.SyncState
 import dev.asofwar.freebrush.data.BrushInfo
 import kotlinx.coroutines.launch
@@ -47,6 +50,11 @@ fun BrushScreen(vm: AppViewModel, brush: BrushInfo, sync: SyncState) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val log by vm.log.collectAsStateWithLifecycle()
+    val action by vm.action.collectAsStateWithLifecycle()
+    val custom by vm.customProgrammes.collectAsStateWithLifecycle()
+    val settings = brush.settingsHex?.let { hex(it) }
+    val busy = sync is SyncState.Running || action is ActionState.Running
+    var programmes by remember { mutableStateOf(false) }
     var confirmForget by remember { mutableStateOf(false) }
     var confirmClear by remember { mutableStateOf(false) }
     val running = sync is SyncState.Running
@@ -69,7 +77,15 @@ fun BrushScreen(vm: AppViewModel, brush: BrushInfo, sync: SyncState) {
             Gauge((brush.battery ?: 0) / 100f, batteryColor(brush.battery))
         }
 
-        HeadCard(brush, Modifier.staggeredEntrance(3))
+        ActionLine(action)
+
+        ProgrammeCard(settings, custom, busy, onChoose = { programmes = true }, modifier = Modifier.staggeredEntrance(3))
+
+        HeadCard(brush, Modifier.staggeredEntrance(3)) {
+            HeadActions(brush.headWearMax, busy, onReset = vm::resetHead, onLimit = vm::setHeadLimit)
+        }
+
+        SettingsCard(settings, busy, onToggle = vm::setToggle, onLanguage = vm::setLanguage, modifier = Modifier.staggeredEntrance(4))
 
         SectionCard(Modifier.staggeredEntrance(4)) {
             ActionRow(Icons.Sync, if (running) "Синхронизация…" else "Синхронизировать", MaterialTheme.colorScheme.primary, spinningRotation(running)) {
@@ -101,6 +117,19 @@ fun BrushScreen(vm: AppViewModel, brush: BrushInfo, sync: SyncState) {
         Spacer(Modifier.height(8.dp))
     }
 
+    if (programmes) {
+        ProgrammesSheet(
+            active = settings?.let { it[BrushControls.SCHEME_INDEX].toInt() and 0xFF },
+            autoMode = settings?.let { BrushControls.Toggle.AUTO_MODE.isOn(it) } == true,
+            custom = custom,
+            onAuto = { programmes = false; vm.setToggle(BrushControls.Toggle.AUTO_MODE, true) },
+            onSend = { programmes = false; vm.sendProgramme(it) },
+            onSave = vm::saveProgramme,
+            onDelete = vm::deleteProgramme,
+            newNum = vm::newProgrammeNum,
+            onClose = { programmes = false },
+        )
+    }
     if (confirmForget) {
         AlertDialog(
             onDismissRequest = { confirmForget = false },
@@ -122,7 +151,7 @@ fun BrushScreen(vm: AppViewModel, brush: BrushInfo, sync: SyncState) {
 }
 
 @Composable
-private fun HeadCard(brush: BrushInfo, modifier: Modifier) {
+private fun HeadCard(brush: BrushInfo, modifier: Modifier, actions: @Composable () -> Unit) {
     val wear = if (brush.headWear != null && brush.headWearMax != null && brush.headWearMax > 0) {
         brush.headWear.toFloat() / brush.headWearMax
     } else {
@@ -157,6 +186,7 @@ private fun HeadCard(brush: BrushInfo, modifier: Modifier) {
                 }
             }
         }
+        actions()
     }
 }
 

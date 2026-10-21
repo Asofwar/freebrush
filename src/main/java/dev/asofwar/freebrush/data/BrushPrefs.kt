@@ -18,6 +18,8 @@ data class BrushInfo(
     /** Brush-head wear counter and its limit as the brush reports them. */
     val headWear: Int? = null,
     val headWearMax: Int? = null,
+    /** Raw settings block last read from the brush (hex), see OcleanProtocol.Settings. */
+    val settingsHex: String? = null,
     val lastSyncMillis: Long? = null,
 )
 
@@ -40,6 +42,7 @@ class BrushPrefs(context: Context) {
             headUses = int("headUses"),
             headWear = int("headWear"),
             headWearMax = int("headWearMax"),
+            settingsHex = prefs.getString("settings", null),
             lastSyncMillis = if (prefs.contains("lastSync")) prefs.getLong("lastSync", 0) else null,
         )
     }
@@ -57,6 +60,7 @@ class BrushPrefs(context: Context) {
                 info.headUses?.let { putInt("headUses", it) }
                 info.headWear?.let { putInt("headWear", it) }
                 info.headWearMax?.let { putInt("headWearMax", it) }
+                info.settingsHex?.let { putString("settings", it) }
                 info.lastSyncMillis?.let { putLong("lastSync", it) }
             }
         }.apply()

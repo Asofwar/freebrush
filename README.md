@@ -29,8 +29,10 @@ that is needed. FreeBrush reads the data straight from the brush and keeps it on
 | Streaks, two-week chart, daily goal | ✅ | partly |
 | 3D jaw model you can rotate and tap for per-zone stats | ✅ | flat diagram |
 | Export to CSV | ✅ | ❌ |
-| Brush settings (pressure alert, language, brush-head counter) | planned | ✅ |
-| Brushing modes and custom programmes | planned | ✅ |
+| Brush settings: zone reminder, raise-to-wake, day/evening mode, side-motion warning, display language, brush-head reset and limit | ✅ | ✅ |
+| Settings the official app hides on this brush: pressure alert, brush pause, wake-up mode | ✅ | ❌ |
+| Brushing programmes: the brush's built-in modes (incl. the hidden day/evening ones), Oclean's catalogue | ✅ | ✅ |
+| Custom programmes | ✅ up to 25, 32 cleaning levels + whitening, massage, sensitive, 5–255 s steps | 3 programmes, 4 levels per mode |
 | Firmware updates | ❌ never: firmware comes from the vendor's servers | ✅ |
 | Family accounts, "expert" reports, AI chat | ❌ | ✅ |
 

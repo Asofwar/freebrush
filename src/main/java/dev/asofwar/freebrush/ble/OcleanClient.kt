@@ -49,7 +49,52 @@ class SyncResult(
  */
 class OcleanClient(private val context: Context) {
 
-    suspend fun sync(address: String, onStep: (String) -> Unit): SyncResult {
+    suspend fun sync(address: String, onStep: (String) -> Unit): SyncResult = withBrush(address, onStep) { s ->
+        exchange(s, onStep)
+    }
+
+    /** A connected brush, for writing settings: one command in flight at a time, as the brush expects. */
+    inner class Link internal constructor(private val s: GattSession, private val onStep: (String) -> Unit) {
+        /** Writes [bytes] and waits for the brush's "OK"; true when it confirmed. */
+        suspend fun send(bytes: ByteArray, label: String): Boolean {
+            onStep(label)
+            val ok = request(s, WRITE, bytes, onStep) { OcleanProtocol.isAck(it.value, bytes) } != null
+            if (!ok) onStep("Щётка не подтвердила: $label")
+            delay(100)
+            return ok
+        }
+
+        /** Reads the settings block back from the brush. */
+        suspend fun settings(): OcleanProtocol.Settings? = readSettings(s, onStep)
+    }
+
+    /** Connects, runs [block] with a [Link] (logging every notification), disconnects. */
+    suspend fun <T> connect(address: String, onStep: (String) -> Unit, block: suspend Link.() -> T): T =
+        withBrush(address, onStep) { s ->
+            coroutineScope {
+                val logger = launchLogger(s, onStep)
+                try {
+                    Link(s, onStep).block()
+                } finally {
+                    logger.cancel()
+                }
+            }
+        }
+
+    class ApplyResult(val confirmed: Int, val total: Int, val settings: OcleanProtocol.Settings?)
+
+    /**
+     * Writes [commands] (bytes and a label for the log) one by one, each waiting for the brush's "OK", then reads
+     * the settings back so the app shows what the brush actually stored rather than what was asked for.
+     */
+    suspend fun apply(address: String, commands: List<Pair<ByteArray, String>>, onStep: (String) -> Unit): ApplyResult =
+        connect(address, onStep) {
+            val confirmed = commands.count { (bytes, label) -> send(bytes, label) }
+            ApplyResult(confirmed, commands.size, settings())
+        }
+
+    /** Connects, discovers the brush service and subscribes to its notifications, runs [block], disconnects. */
+    private suspend fun <T> withBrush(address: String, onStep: (String) -> Unit, block: suspend (GattSession) -> T): T {
         val adapter = context.getSystemService(BluetoothManager::class.java)?.adapter
             ?: throw GattException("Нет Bluetooth")
         if (!adapter.isEnabled) throw GattException("Bluetooth выключен")
@@ -57,10 +102,28 @@ class OcleanClient(private val context: Context) {
 
         val session = connectWithRetry(device, onStep)
         try {
-            return exchange(session, onStep)
+            onStep("Чтение сервисов…")
+            session.discoverServices()
+            runCatching { session.requestMtu(123) }.onSuccess { onStep("MTU $it") }
+            if (!session.hasCharacteristic(SERVICE, WRITE) || !session.hasCharacteristic(SERVICE, SESSION_STREAM)) {
+                throw GattException("Это не похоже на щётку Oclean: нет нужного сервиса")
+            }
+            for (uuid in listOf(NOTIFY, SESSION_STREAM)) subscribe(session, uuid, onStep)
+            delay(200)
+            return block(session)
         } finally {
             session.close()
         }
+    }
+
+    private suspend fun readSettings(s: GattSession, onStep: (String) -> Unit): OcleanProtocol.Settings? {
+        onStep("Чтение настроек…")
+        val asm = OcleanProtocol.SettingsAssembler()
+        var settings: OcleanProtocol.Settings? = null
+        request(s, WRITE, OcleanProtocol.CMD_SETTINGS, onStep) { n ->
+            n.characteristic == NOTIFY && asm.feed(n.value)?.also { settings = it } != null
+        } ?: onStep("Настройки не пришли")
+        return settings
     }
 
     private suspend fun connectWithRetry(
@@ -87,13 +150,6 @@ class OcleanClient(private val context: Context) {
     }
 
     private suspend fun exchange(s: GattSession, onStep: (String) -> Unit): SyncResult = coroutineScope {
-        onStep("Чтение сервисов…")
-        s.discoverServices()
-        runCatching { s.requestMtu(123) }.onSuccess { onStep("MTU $it") }
-        if (!s.hasCharacteristic(SERVICE, WRITE) || !s.hasCharacteristic(SERVICE, SESSION_STREAM)) {
-            throw GattException("Это не похоже на щётку Oclean: нет нужного сервиса")
-        }
-
         // Log every notification: the log is what users attach to device reports.
         val logger = launchLogger(s, onStep)
 
@@ -104,9 +160,6 @@ class OcleanClient(private val context: Context) {
         onStep("Модель $model, прошивка ${software ?: firmware}, железо $hardware")
         var battery = runCatching { s.read(BATTERY_SERVICE, BATTERY_LEVEL)[0].toInt() and 0xFF }.getOrNull()
 
-        for (uuid in listOf(NOTIFY, SESSION_STREAM)) subscribe(s, uuid, onStep)
-        delay(200)
-
         val now = ZonedDateTime.now()
         val tzIndex = OcleanProtocol.tzIndex(now.offset.totalSeconds / 60)
 
@@ -115,12 +168,7 @@ class OcleanClient(private val context: Context) {
         request(s, WRITE, timeCmd, onStep) { OcleanProtocol.isAck(it.value, timeCmd) }
             ?: onStep("Щётка не подтвердила время")
 
-        onStep("Чтение настроек…")
-        val settingsAsm = OcleanProtocol.SettingsAssembler()
-        var settings: OcleanProtocol.Settings? = null
-        request(s, WRITE, OcleanProtocol.CMD_SETTINGS, onStep) { n ->
-            n.characteristic == NOTIFY && settingsAsm.feed(n.value)?.also { settings = it } != null
-        } ?: onStep("Настройки не пришли")
+        val settings = readSettings(s, onStep)
 
         val status = request(s, WRITE, OcleanProtocol.CMD_STATUS, onStep) { OcleanProtocol.parseStatusBattery(it.value) != null }
             // Some firmware answers queries only on the session channel.

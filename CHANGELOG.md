@@ -32,3 +32,7 @@ All notable changes to this project are documented here. The format follows
   vertex, 16-bit indices, about 0.7 MB in the APK) instead of being generated on the phone (about 0.4 s of CPU per
   start). Rendering is on demand: one entrance turn, finite animations, nothing drawn while the model is off
   screen, so an idle model costs no CPU or GPU time.
+- Brush settings and programmes for the X Pro Digital (hardware protocol 0003), probed on a real brush: every switch
+  the firmware has, including the pressure alert, brush pause and wake-up mode the official app hides; display
+  language; brush-head reset and wear limit; the brush's built-in modes, Oclean's programme catalogue and unlimited
+  custom programmes with the full range of motor levels. Acks echo the written value on this firmware.
