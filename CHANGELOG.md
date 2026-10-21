@@ -24,3 +24,7 @@ All notable changes to this project are documented here. The format follows
   ambient occlusion and 4x MSAA. Zones tint the enamel mint (brushed) or orange (missed); drag sideways to rotate
   with inertia, tap a tooth to see its zone's seconds, share of the session and weekly average, double-tap to
   reset.
+- Studio look for the 3D jaw: porcelain teeth with softbox reflections, soft-touch gums shaped as a rounded
+  ridge, a spotlit stage with a glossy floor reflection and a slow turntable. Zone data moved from tinted enamel
+  into light: a glowing line under every zone, mint when brushed, amber when missed. Tapping a tooth or a line
+  turns the model to present that zone.

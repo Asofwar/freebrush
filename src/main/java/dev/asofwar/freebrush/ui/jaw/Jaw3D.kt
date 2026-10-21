@@ -15,8 +15,9 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.awaitHorizontalTouchSlopOrCancellation
@@ -32,6 +33,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -56,7 +58,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
@@ -79,15 +80,28 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.LocalDate
 import kotlin.math.PI
-import kotlin.math.sin
 
-private const val DEFAULT_PITCH = 0.30f
-
-/** How strongly zone colours tint the natural enamel when no zone is selected. */
-private const val ZONE_TINT = 0.62f
+private const val DEFAULT_PITCH = 0.34f
 
 /** Seconds per zone the app aims for: two minutes spread over eight zones. */
 private const val GOAL_ZONE_SEC = 15
+
+/** Turntable speed while nobody touches the model, radians per second (a turn in about half a minute). */
+private const val TURNTABLE = 0.2f
+
+/** Light-ring colours: fixed, not themed, so the data reads the same in light and dark mode. */
+private val RING_FRESH = Color(0xFF34D399)
+private val RING_DEEP = Color(0xFF2DD4BF)
+private val RING_MISSED = Color(0xFFFF9F0A)
+
+/**
+ * Camera angles (yaw, pitch) that present each zone to the viewer. Outer zones are seen from the front-side;
+ * inner ones from behind, through the open back of the arches. Right-side zones mirror the left ones.
+ */
+private val ZONE_VIEWS = arrayOf(
+    -0.80f to 0.10f, 2.60f to 0.02f, -0.80f to 0.34f, 2.60f to 0.24f,
+    0.80f to 0.10f, -2.60f to 0.02f, 0.80f to 0.34f, -2.60f to 0.24f,
+)
 
 /** The mesh has tens of thousands of vertices: build it once per process, off the main thread. */
 private object JawCache {
@@ -96,9 +110,10 @@ private object JawCache {
 }
 
 /**
- * Interactive 3D model of both jaws, rendered on the GPU, tinted by brushing time per zone. Drag sideways to
- * rotate (with inertia), tap a tooth surface to select its zone and see its numbers, double-tap to reset.
- * Until touched, the model sways gently.
+ * A porcelain dentition on a glossy stage, rendered on the GPU. Brushing time per zone is shown as light: a
+ * glowing line under every zone, mint when brushed enough, amber when missed. Drag sideways to turn it (with
+ * inertia); tap a tooth or a light line and the model turns to present that zone; double-tap to reset.
+ * Until touched, it turns slowly like a product on a turntable.
  */
 @Composable
 fun Jaw3D(session: BrushSession, history: List<BrushSession>, modifier: Modifier = Modifier) {
@@ -110,54 +125,81 @@ fun Jaw3D(session: BrushSession, history: List<BrushSession>, modifier: Modifier
     }
     val scope = rememberCoroutineScope()
     val haptics = LocalHapticFeedback.current
+    val dark = isSystemInDarkTheme()
 
-    var yaw by remember { mutableFloatStateOf(0f) }
+    var yaw by remember { mutableFloatStateOf(-0.5f) }
     var pitch by remember { mutableFloatStateOf(DEFAULT_PITCH) }
     var selected by remember(session.key) { mutableIntStateOf(-1) }
     var touched by remember { mutableStateOf(false) }
-    var fling by remember { mutableStateOf<Job?>(null) }
+    var motion by remember { mutableStateOf<Job?>(null) }
     var view by remember { mutableStateOf<JawGlView?>(null) }
-    val entrance = remember(session.key) { Animatable(0.7f) }
-    val colors by rememberUpdatedState(zoneColors(seconds))
+    val entrance = remember(session.key) { Animatable(0.82f) }
+    val rings by rememberUpdatedState(ringData(seconds))
 
     LaunchedEffect(session.key) {
-        entrance.animateTo(1f, spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow))
+        entrance.animateTo(1f, spring(dampingRatio = 0.7f, stiffness = Spring.StiffnessVeryLow))
     }
-    // Idle sway until the first touch.
+    // Turntable until the first touch.
     LaunchedEffect(touched) {
         if (touched) return@LaunchedEffect
-        val start = withFrameNanos { it }
+        var last = withFrameNanos { it }
         while (true) {
-            withFrameNanos { now -> yaw = sin((now - start) / 1e9f * 0.6f) * 0.5f }
+            withFrameNanos { now ->
+                yaw += TURNTABLE * (now - last) / 1e9f
+                last = now
+            }
         }
     }
     val pulse = rememberInfiniteTransition(label = "glow")
-    val glow by pulse.animateFloat(0f, 1f, infiniteRepeatable(tween(850), RepeatMode.Reverse), label = "glow")
+    val glow by pulse.animateFloat(0f, 1f, infiniteRepeatable(tween(1100), RepeatMode.Reverse), label = "glow")
 
     // Push every visible change to the GL thread; nothing is drawn while the model is still.
     LaunchedEffect(view) {
         val v = view ?: return@LaunchedEffect
         snapshotFlow {
-            JawGlView.Frame(yaw, pitch, entrance.value, colors, selected, if (selected >= 0) glow else 0f, ZONE_TINT)
+            JawGlView.Frame(yaw, pitch, entrance.value, rings, selected, if (selected >= 0) glow else 0f)
         }.collect { v.submit(it) }
     }
 
-    Column(modifier) {
-        Box(Modifier.fillMaxWidth().height(290.dp)) {
-            // Soft contact shadow under the model.
-            Canvas(Modifier.matchParentSize()) {
-                val c = Offset(size.width / 2, size.height * 0.9f)
-                val r = size.width * 0.30f
-                scale(1f, 0.16f, pivot = c) {
-                    drawCircle(Brush.radialGradient(listOf(Color.Black.copy(alpha = 0.28f), Color.Transparent), c, r), r, c)
-                }
+    /** Turns the model to [targetYaw]/[targetPitch] along the shortest way round, then runs [then]. */
+    fun turnTo(targetYaw: Float, targetPitch: Float, then: () -> Unit = {}) {
+        motion?.cancel()
+        motion = scope.launch {
+            val turn = (2 * PI).toFloat()
+            var dy = (targetYaw - yaw) % turn
+            if (dy > PI) dy -= turn
+            if (dy < -PI) dy += turn
+            val y0 = yaw
+            val p0 = pitch
+            Animatable(0f).animateTo(1f, spring(dampingRatio = 0.9f, stiffness = 60f)) {
+                yaw = y0 + dy * value
+                pitch = p0 + (targetPitch - p0) * value
             }
+            then()
+        }
+    }
+
+    Column(modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(
+            Modifier
+                .widthIn(max = 640.dp)
+                .fillMaxWidth()
+                .height(300.dp)
+                .clip(RoundedCornerShape(26.dp))
+                .background(
+                    Brush.radialGradient(
+                        if (dark) listOf(Color(0xFF2E3837), Color(0xFF0A0F0E)) else listOf(Color.White, Color(0xFFDDE5E3)),
+                        center = Offset.Unspecified,
+                        radius = 900f,
+                    ),
+                ),
+        ) {
             val m = mesh
             if (m == null) {
                 CircularProgressIndicator(Modifier.align(Alignment.Center).size(28.dp), strokeWidth = 2.dp)
             } else {
                 AndroidView(
-                    factory = { ctx -> JawGlView(ctx, m).also { view = it } },
+                    factory = { ctx -> JawGlView(ctx, m, JawCache.camera).also { view = it } },
                     modifier = Modifier.matchParentSize(),
                 )
             }
@@ -170,46 +212,44 @@ fun Jaw3D(session: BrushSession, history: List<BrushSession>, modifier: Modifier
                             onTap = { o ->
                                 touched = true
                                 val z = JawCache.camera.pick(o.x, o.y, size.width.toFloat(), size.height.toFloat(), yaw, pitch, entrance.value)
-                                selected = if (z != null && z >= 0 && z != selected) z else -1
-                                if (z != null && z >= 0) haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                if (z != null && z >= 0 && z != selected) {
+                                    selected = z
+                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    val (vy, vp) = ZONE_VIEWS[z]
+                                    turnTo(vy, vp)
+                                } else {
+                                    selected = -1
+                                }
                             },
                             onDoubleTap = {
-                                touched = true
-                                fling?.cancel()
                                 selected = -1
-                                scope.launch {
-                                    val y0 = yaw
-                                    val p0 = pitch
-                                    val target = Math.round(y0 / (2 * PI)).toFloat() * (2 * PI).toFloat()
-                                    Animatable(0f).animateTo(1f, tween(500)) {
-                                        yaw = y0 + (target - y0) * value
-                                        pitch = p0 + (DEFAULT_PITCH - p0) * value
-                                    }
-                                }
+                                touched = true
+                                // Back to the starting view, then the turntable resumes.
+                                turnTo(-0.5f, DEFAULT_PITCH) { touched = false }
                             },
                         )
                     }
                     .pointerInput(Unit) {
-                        // Rotation starts only from a sideways drag, so vertical swipes still scroll the page.
-                        // Once rotating, vertical movement tilts the model too.
+                        // Turning starts only from a sideways drag, so vertical swipes still scroll the page.
+                        // Once turning, vertical movement changes the viewing height too.
                         awaitEachGesture {
                             val down = awaitFirstDown(requireUnconsumed = false)
                             val start = awaitHorizontalTouchSlopOrCancellation(down.id) { change, _ -> change.consume() }
                                 ?: return@awaitEachGesture
                             touched = true
-                            fling?.cancel()
+                            motion?.cancel()
                             val tracker = VelocityTracker()
                             tracker.addPosition(start.uptimeMillis, start.position)
                             drag(start.id) { change ->
                                 val d = change.positionChange()
                                 change.consume()
                                 tracker.addPosition(change.uptimeMillis, change.position)
-                                yaw += d.x * 0.011f
-                                pitch = (pitch + d.y * 0.0045f).coerceIn(-0.9f, 1.1f)
+                                yaw += d.x * 0.010f
+                                pitch = (pitch + d.y * 0.004f).coerceIn(0f, 0.95f)
                             }
                             val v = tracker.calculateVelocity()
-                            fling = scope.launch {
-                                animateDecay(yaw, v.x * 0.011f, FloatExponentialDecaySpec(frictionMultiplier = 1.6f)) { value, _ ->
+                            motion = scope.launch {
+                                animateDecay(yaw, v.x * 0.010f, FloatExponentialDecaySpec(frictionMultiplier = 1.4f)) { value, _ ->
                                     yaw = value
                                 }
                             }
@@ -217,24 +257,20 @@ fun Jaw3D(session: BrushSession, history: List<BrushSession>, modifier: Modifier
                     },
             )
         }
-        Spacer(Modifier.height(10.dp))
-        ZonePanel(selected, seconds, history)
+        Spacer(Modifier.height(14.dp))
+        Box(Modifier.widthIn(max = 640.dp).fillMaxWidth()) { ZonePanel(selected, seconds, history) }
     }
 }
 
-/** Zone colours as sRGB triples: teal brighter with more time, amber under [MIN_ZONE_SEC]. */
-@Composable
-private fun zoneColors(seconds: List<Int>): FloatArray {
-    val max = seconds.max().coerceAtLeast(1)
-    // Fixed colours rather than theme ones: they tint enamel and must read the same in light and dark mode.
-    val light = Color(0xFF9FEBDD)
-    val deep = Color(0xFF14B8A6)
-    val missed = Color(0xFFFF8A3D)
-    val out = FloatArray(24)
+/** Per zone: ring colour (sRGB) and brightness, from the seconds brushed. */
+private fun ringData(seconds: List<Int>): FloatArray {
+    val out = FloatArray(32)
     for (i in 0 until 8) {
         val s = seconds[i]
-        val c = if (s < MIN_ZONE_SEC) missed else lerp(light, deep, s.toFloat() / max)
-        out[i * 3] = c.red; out[i * 3 + 1] = c.green; out[i * 3 + 2] = c.blue
+        val t = (s.toFloat() / GOAL_ZONE_SEC).coerceIn(0f, 1f)
+        val c = if (s < MIN_ZONE_SEC) RING_MISSED else lerp(RING_FRESH, RING_DEEP, t)
+        out[i * 4] = c.red; out[i * 4 + 1] = c.green; out[i * 4 + 2] = c.blue
+        out[i * 4 + 3] = if (s < MIN_ZONE_SEC) 0.85f else 0.55f + 0.45f * t
     }
     return out
 }
@@ -248,20 +284,20 @@ private fun ZonePanel(selected: Int, seconds: List<Int>, history: List<BrushSess
     ) { zone ->
         if (zone < 0) {
             val weakest = seconds.indices.minBy { seconds[it] }
-            Column {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(width = 18.dp, height = 4.dp).clip(CircleShape).background(RING_DEEP))
+                    Text("  прочищено", style = MaterialTheme.typography.labelMedium)
+                    Spacer(Modifier.width(16.dp))
+                    Box(Modifier.size(width = 18.dp, height = 4.dp).clip(CircleShape).background(RING_MISSED))
+                    Text("  меньше $MIN_ZONE_SEC с", style = MaterialTheme.typography.labelMedium)
+                }
                 Text(
-                    "Крути модель пальцем, нажми на зуб — покажу его зону. Двойное нажатие вернёт вид.",
+                    "Меньше всего — ${Zones.ALL[weakest].lowercase()}, ${seconds[weakest]} с. " +
+                        "Коснись зуба или линии, чтобы увидеть зону.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                Spacer(Modifier.height(6.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(10.dp).clip(CircleShape).background(Color(0xFFFF8A3D)))
-                    Text(
-                        "  меньше $MIN_ZONE_SEC с · меньше всего: ${Zones.ALL[weakest].lowercase()}, ${seconds[weakest]} с",
-                        style = MaterialTheme.typography.labelSmall,
-                    )
-                }
             }
         } else {
             ZoneStats(zone, seconds, history)

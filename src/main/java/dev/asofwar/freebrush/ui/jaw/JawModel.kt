@@ -18,9 +18,15 @@ import kotlin.math.tan
  *
  * Coordinates are millimetres: x to the patient's left, y up, z forward. For tooth vertices the zone base is
  * the outer-surface zone of that tooth in [dev.asofwar.freebrush.data.Zones.ALL] order (the inner zone is base+1)
- * and the outer weight blends between them; gum vertices have zone base -1.
+ * and the outer weight blends between them; gum vertices have zone base -1; light rings use [RING] and [HALO].
  */
-class JawMesh(val vertices: FloatArray, val indices: IntArray, val triZone: IntArray) {
+class JawMesh(
+    val vertices: FloatArray,
+    val indices: IntArray,
+    val triZone: IntArray,
+    /** Opaque triangles come first (teeth, gums, light-ring cores) and can be tapped; ring halos follow. */
+    val pickableTriangles: Int,
+) {
     val vertexCount: Int get() = vertices.size / STRIDE
     val triangleCount: Int get() = indices.size / 3
 
@@ -31,6 +37,10 @@ class JawMesh(val vertices: FloatArray, val indices: IntArray, val triZone: IntA
     companion object {
         const val STRIDE = 12
         const val GUM = -1
+
+        /** Zone attribute offsets: light-ring cores carry 10 + zone, their halos 20 + zone. */
+        const val RING = 10
+        const val HALO = 20
     }
 }
 
@@ -70,14 +80,17 @@ object JawModel {
     private const val U = 40
     private const val V = 20
 
-    private val ENAMEL = floatArrayOf(0.96f, 0.94f, 0.89f)
-    private val CERVICAL = floatArrayOf(0.93f, 0.86f, 0.70f)
-    private val TRANSLUCENT = floatArrayOf(0.80f, 0.86f, 0.92f)
-    private val GUM_CORAL = floatArrayOf(0.93f, 0.58f, 0.60f)
-    private val GUM_DEEP = floatArrayOf(0.80f, 0.37f, 0.43f)
+    // Porcelain rather than anatomy: near-white enamel with only a hint of warmth at the neck,
+    // and a muted, soft-touch blush for the gums.
+    private val ENAMEL = floatArrayOf(0.975f, 0.97f, 0.96f)
+    private val CERVICAL = floatArrayOf(0.95f, 0.91f, 0.84f)
+    private val TRANSLUCENT = floatArrayOf(0.86f, 0.90f, 0.95f)
+    private val GUM_CORAL = floatArrayOf(0.93f, 0.71f, 0.72f)
+    private val GUM_DEEP = floatArrayOf(0.86f, 0.60f, 0.63f)
 
     fun build(): JawMesh {
         val b = MeshBuilder()
+        val jaws = ArrayList<Triple<Boolean, Arch, List<Placed>>>()
         for (upper in listOf(true, false)) {
             val arch = if (upper) Arch(21.5f, 23.5f) else Arch(19.6f, 21.0f)
             val teeth = if (upper) UPPER else LOWER
@@ -91,7 +104,11 @@ object JawModel {
                 }
             }
             addGum(b, arch, upper, placed)
+            jaws += Triple(upper, arch, placed)
         }
+        for ((upper, arch, placed) in jaws) addRings(b, arch, upper, placed, halo = false)
+        b.markHalos()
+        for ((upper, arch, placed) in jaws) addRings(b, arch, upper, placed, halo = true)
         return b.build()
     }
 
@@ -242,22 +259,85 @@ object JawModel {
 
     /** Enamel colour: warmer at the neck, slightly translucent blue-grey at incisal edges and canine tips. */
     private fun colorFor(kind: Kind, v: Float): FloatArray {
-        var c = mix(ENAMEL, CERVICAL, (1f - smooth(0f, 0.35f, v)) * 0.7f)
-        if (kind == Kind.INCISOR || kind == Kind.CANINE) c = mix(c, TRANSLUCENT, smooth(0.78f, 1f, v) * 0.55f)
+        var c = mix(ENAMEL, CERVICAL, (1f - smooth(0f, 0.3f, v)) * 0.6f)
+        if (kind == Kind.INCISOR || kind == Kind.CANINE) c = mix(c, TRANSLUCENT, smooth(0.8f, 1f, v) * 0.45f)
         return c
     }
 
     // ---- Gums --------------------------------------------------------------------------------------------------
 
+    private fun baseQ(upper: Boolean) = if (upper) 13.5f else 13.0f
+
+    /** Half depth of the gum ridge core at arc length [sa], blended between neighbouring teeth. */
+    private fun ridgeDepth(sideTeeth: List<Placed>, sa: Float): Float {
+        val tooth = sideTeeth.firstOrNull { sa <= it.s1 + CONTACT_GAP / 2 } ?: sideTeeth.last()
+        val across = ((sa - tooth.s0) / (tooth.s1 - tooth.s0)).coerceIn(0f, 1f)
+        val atCenter = sin(PI * across).toFloat()
+        val i = sideTeeth.indexOf(tooth)
+        val next = sideTeeth.getOrNull(if (across > 0.5f) i + 1 else i - 1) ?: tooth
+        val blend = (1f - atCenter) * 0.5f
+        return (tooth.tooth.depth * (1 - blend) + next.tooth.depth * blend) / 2 * 0.78f
+    }
+
+    /**
+     * Light rings: a glowing tube along the base of each jaw for every zone, outside the arch for outer zones and
+     * inside it for inner ones, with a wider [halo] tube drawn transparently around it.
+     */
+    private fun addRings(b: MeshBuilder, arch: Arch, upper: Boolean, placed: List<Placed>, halo: Boolean) {
+        val radius = if (halo) 2.1f else 0.78f
+        val plane = if (upper) HALF_OPENING else -HALF_OPENING
+        val dirQ = if (upper) 1f else -1f
+        val y = plane + dirQ * (baseQ(upper) - 1.5f)
+        val around = if (halo) 14 else 12
+        for (side in listOf(1, -1)) {
+            val sideTeeth = placed.filter { it.side == side }
+            val s0 = 0.7f
+            val s1 = sideTeeth.last().s1 + 1.2f
+            for (outer in listOf(true, false)) {
+                val zone = (if (side > 0) 0 else 4) + (if (upper) 0 else 2) + (if (outer) 0 else 1)
+                val tag = (if (halo) JawMesh.HALO else JawMesh.RING) + zone
+                val steps = ((s1 - s0) / 0.35f).toInt()
+                val first = b.vertexCount
+                val centers = ArrayList<FloatArray>()
+                for (k in 0..steps) {
+                    val sa = s0 + (s1 - s0) * k / steps
+                    val f = arch.frame(sa, side)
+                    val d = ridgeDepth(sideTeeth, sa)
+                    val r = if (outer) d + 2.3f else -(d + 2.05f)
+                    val px = f.px + f.rx * r
+                    val pz = f.pz + f.rz * r
+                    // Lines taper and fade over their last few millimetres instead of ending in a blunt dot.
+                    val fade = smooth(0f, 5f, min(sa - s0, s1 - sa))
+                    val rr = radius * (0.2f + 0.8f * fade)
+                    for (i in 0 until around) {
+                        val a = 2 * PI * i / around
+                        val cr = cos(a).toFloat() * rr
+                        val cy = sin(a).toFloat() * rr
+                        b.vertex(px + f.rx * cr, y + cy, pz + f.rz * cr, 1f, 1f, 1f, 1f, tag.toFloat(), fade)
+                    }
+                    centers += floatArrayOf(px, y, pz)
+                }
+                for (k in 0 until steps) {
+                    for (i in 0 until around) {
+                        val a = first + k * around + i
+                        val c = first + k * around + (i + 1) % around
+                        b.triangle(a, c, a + around, centers[k])
+                        b.triangle(c, c + around, a + around, centers[k])
+                    }
+                }
+            }
+        }
+    }
+
     private fun addGum(b: MeshBuilder, arch: Arch, upper: Boolean, placed: List<Placed>) {
         val sideTeeth = placed.filter { it.side > 0 }
-        val end = sideTeeth.last().s1 + 2.5f
+        val end = sideTeeth.last().s1 + 4f
         val step = 0.25f
         val slices = (2 * end / step).toInt()
         val dirQ = if (upper) 1f else -1f // q grows away from the teeth: up for the upper gum
         val plane = if (upper) HALF_OPENING else -HALF_OPENING
-        val baseQ = if (upper) 15.5f else 14.5f
-        val profileSize = 13
+        val baseQ = baseQ(upper)
+        val profileSize = 14
         val first = b.vertexCount
         val centers = ArrayList<FloatArray>()
 
@@ -285,19 +365,28 @@ object JawModel {
                 else -> 0.5f
             } * atCenter * atCenter
 
-            // Cross-section loop (r outward from the arch line, q away from the occlusal plane), labial to lingual.
-            val r = floatArrayOf(
-                d + 0.2f, d + 1.0f, d + 1.9f + bulge, d + 2.5f + bulge * 0.6f, d + 2.2f, d + 1.2f,
-                -d - 1.0f, -d - 1.9f, -d - 2.3f, -d - 1.3f, -d - 0.2f, -d * 0.45f, d * 0.45f,
-            )
-            // Heights split the gum between its margin and the base, so the loop never folds over itself.
+            // Cross-section loop (r outward from the arch line, q away from the occlusal plane), labial to lingual:
+            // a soft pillow with a domed underside. Heights split the gum between its margin and the base, so the
+            // loop never folds over itself.
             val g = baseQ - m
-            val q = floatArrayOf(
-                m, m + 0.15f * g, m + 0.45f * g, m + 0.78f * g, baseQ - 0.6f, baseQ,
-                baseQ, baseQ - 0.6f, m + 0.62f * g, m + 0.3f * g, m + 0.4f, m - 0.3f, m - 0.3f,
+            val r = floatArrayOf(
+                d + 0.2f, d + 1.0f, d + 1.8f + bulge, d + 2.15f + bulge * 0.5f, d + 1.9f, d + 1.1f, 0f,
+                -d - 1.0f, -d - 1.7f, -d - 2.0f, -d - 1.3f, -d - 0.2f, -d * 0.45f, d * 0.45f,
             )
+            val q = floatArrayOf(
+                m, m + 0.18f * g, m + 0.45f * g, m + 0.72f * g, baseQ - 0.9f, baseQ - 0.15f, baseQ + 0.3f,
+                baseQ - 0.15f, baseQ - 0.9f, m + 0.62f * g, m + 0.3f * g, m + 0.4f, m - 0.3f, m - 0.3f,
+            )
+            // Round the ends of the ridge behind the last molars into a dome.
+            val k = ((end - sa) / 3.5f).coerceIn(0f, 1f)
+            val round = sqrt(k * (2f - k)).coerceAtLeast(0.06f)
+            val qc = (m + baseQ) / 2
+            for (p in r.indices) {
+                r[p] *= round
+                q[p] = qc + (q[p] - qc) * round
+            }
             for (p in 0 until profileSize) {
-                val nearMargin = p == 0 || p >= 10
+                val nearMargin = p == 0 || p >= 11
                 val depthT = smooth(m, baseQ, q[p])
                 val col = mix(GUM_CORAL, GUM_DEEP, depthT * 0.9f)
                 val ao = if (nearMargin) 0.72f else 0.9f + 0.1f * depthT
@@ -396,8 +485,14 @@ internal class MeshBuilder {
     private var size = 0
     private var tris = IntArray(1 shl 16)
     private var triSize = 0
+    private var opaqueEnd = -1
 
     val vertexCount: Int get() = size / JawMesh.STRIDE
+
+    /** Triangles added from now on are transparent halos: drawn last and not pickable. */
+    fun markHalos() {
+        opaqueEnd = triSize / 3
+    }
 
     fun vertex(x: Float, y: Float, z: Float, r: Float, g: Float, b: Float, ao: Float, zone: Float, outer: Float): Int {
         if (size + JawMesh.STRIDE > data.size) data = data.copyOf(data.size * 2)
@@ -450,16 +545,19 @@ internal class MeshBuilder {
             val l = sqrt(v[i * s + 3] * v[i * s + 3] + v[i * s + 4] * v[i * s + 4] + v[i * s + 5] * v[i * s + 5])
             if (l > 1e-9f) { v[i * s + 3] /= l; v[i * s + 4] /= l; v[i * s + 5] /= l }
         }
-        // Zone of each triangle for picking: the tooth's outer or inner zone by the mean outer weight.
+        // Zone of each triangle for picking: the tooth's outer or inner zone by the mean outer weight,
+        // the zone of a light ring, or gum.
         val triZone = IntArray(triSize / 3) { t ->
             val a = idx[t * 3]; val b = idx[t * 3 + 1]; val c = idx[t * 3 + 2]
-            val base = v[a * s + 10].toInt()
+            val base = Math.round(v[a * s + 10])
             when {
                 base < 0 -> JawMesh.GUM
+                base >= JawMesh.HALO -> base - JawMesh.HALO
+                base >= JawMesh.RING -> base - JawMesh.RING
                 (v[a * s + 11] + v[b * s + 11] + v[c * s + 11]) / 3 >= 0.5f -> base
                 else -> base + 1
             }
         }
-        return JawMesh(v, idx, triZone)
+        return JawMesh(v, idx, triZone, if (opaqueEnd >= 0) opaqueEnd else triSize / 3)
     }
 }

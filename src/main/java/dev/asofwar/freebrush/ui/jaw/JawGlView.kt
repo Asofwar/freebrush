@@ -23,27 +23,29 @@ import java.util.concurrent.atomic.AtomicReference
  * TextureView that draws the jaw with OpenGL ES 3 on its own thread. Unlike a SurfaceView it scrolls, clips and
  * animates like any other view, so it works inside scrolling screens and bottom sheets.
  *
- * Callers set the mesh once and then [submit] frames; only the latest frame is drawn.
+ * Each frame has three passes: the model mirrored in a glossy floor (faded), the model itself, and the
+ * transparent halos of the light rings. Callers [submit] frames; only the latest one is drawn.
  */
 @SuppressLint("ViewConstructor")
-class JawGlView(context: Context, private val mesh: JawMesh) : TextureView(context), TextureView.SurfaceTextureListener {
+class JawGlView(context: Context, private val mesh: JawMesh, private val camera: JawCamera) :
+    TextureView(context), TextureView.SurfaceTextureListener {
 
-    /** Everything that changes between frames. [zoneColors] holds 8 sRGB colours as r, g, b triples. */
+    /**
+     * Everything that changes between frames. [rings] holds, per zone, an sRGB colour and a brightness (r, g, b, level).
+     */
     class Frame(
         val yaw: Float,
         val pitch: Float,
         val scale: Float,
-        val zoneColors: FloatArray,
+        val rings: FloatArray,
         val selected: Int,
         val glow: Float,
-        val tint: Float,
     )
 
     private val thread = HandlerThread("jaw-gl").apply { start() }
     private val handler = Handler(thread.looper)
     private val latest = AtomicReference<Frame?>(null)
     private val scheduled = AtomicBoolean(false)
-    private val camera = JawCamera(mesh)
     private var egl: Egl? = null
     private var renderer: Renderer? = null
     private var width = 1
@@ -72,9 +74,8 @@ class JawGlView(context: Context, private val mesh: JawMesh) : TextureView(conte
         handler.post {
             width = w; height = h
             try {
-                val e = Egl(surface)
-                egl = e
-                renderer = Renderer(mesh)
+                egl = Egl(surface)
+                renderer = Renderer(mesh, camera.minY)
                 drawLatest.run()
             } catch (t: Throwable) {
                 Log.e(TAG, "GL init failed", t)
@@ -151,27 +152,29 @@ class JawGlView(context: Context, private val mesh: JawMesh) : TextureView(conte
         }
     }
 
-    private class Renderer(mesh: JawMesh) {
+    private class Renderer(mesh: JawMesh, private val minY: Float) {
         private val program: Int
         private val vao = IntArray(1)
         private val buffers = IntArray(2)
-        private val indexCount = mesh.indices.size
+        private val opaqueCount = mesh.pickableTriangles * 3
+        private val haloCount = mesh.indices.size - opaqueCount
         private val uMvp: Int
         private val uMv: Int
-        private val uZone: Int
+        private val uRing: Int
         private val uSelected: Int
         private val uGlow: Int
-        private val uTint: Int
-        private val mvp = FloatArray(16)
+        private val uPass: Int
+        private val uMinY: Int
 
         init {
             program = link(compile(GLES30.GL_VERTEX_SHADER, VERTEX), compile(GLES30.GL_FRAGMENT_SHADER, FRAGMENT))
             uMvp = GLES30.glGetUniformLocation(program, "uMvp")
             uMv = GLES30.glGetUniformLocation(program, "uMv")
-            uZone = GLES30.glGetUniformLocation(program, "uZone")
+            uRing = GLES30.glGetUniformLocation(program, "uRing")
             uSelected = GLES30.glGetUniformLocation(program, "uSelected")
             uGlow = GLES30.glGetUniformLocation(program, "uGlow")
-            uTint = GLES30.glGetUniformLocation(program, "uTint")
+            uPass = GLES30.glGetUniformLocation(program, "uPass")
+            uMinY = GLES30.glGetUniformLocation(program, "uMinY")
 
             GLES30.glGenVertexArrays(1, vao, 0)
             GLES30.glBindVertexArray(vao[0])
@@ -200,34 +203,50 @@ class JawGlView(context: Context, private val mesh: JawMesh) : TextureView(conte
             GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT or GLES30.GL_DEPTH_BUFFER_BIT)
             GLES30.glEnable(GLES30.GL_DEPTH_TEST)
             GLES30.glEnable(GLES30.GL_CULL_FACE)
-            GLES30.glCullFace(GLES30.GL_BACK)
-            val aspect = w.toFloat() / h
-            val mv = camera.modelView(f.yaw, f.pitch, f.scale, aspect)
-            multiply(mvp, camera.projection(aspect), mv)
             GLES30.glUseProgram(program)
-            GLES30.glUniformMatrix4fv(uMvp, 1, false, mvp, 0)
-            GLES30.glUniformMatrix4fv(uMv, 1, false, mv, 0)
-            GLES30.glUniform3fv(uZone, 8, f.zoneColors, 0)
+            GLES30.glUniform4fv(uRing, 8, f.rings, 0)
             GLES30.glUniform1i(uSelected, f.selected)
             GLES30.glUniform1f(uGlow, f.glow)
-            GLES30.glUniform1f(uTint, f.tint)
+            GLES30.glUniform1f(uMinY, minY)
             GLES30.glBindVertexArray(vao[0])
-            GLES30.glDrawElements(GLES30.GL_TRIANGLES, indexCount, GLES30.GL_UNSIGNED_INT, 0)
+            val aspect = w.toFloat() / h
+            val proj = camera.projection(aspect)
+
+            // 1. Reflection in the floor: mirrored (so winding flips), faded with height, blended premultiplied.
+            setMatrices(proj, camera.modelView(f.yaw, f.pitch, f.scale, aspect, mirrored = true))
+            GLES30.glFrontFace(GLES30.GL_CW)
+            GLES30.glEnable(GLES30.GL_BLEND)
+            GLES30.glBlendFunc(GLES30.GL_ONE, GLES30.GL_ONE_MINUS_SRC_ALPHA)
+            GLES30.glUniform1i(uPass, 1)
+            GLES30.glDrawElements(GLES30.GL_TRIANGLES, opaqueCount, GLES30.GL_UNSIGNED_INT, 0)
+            GLES30.glClear(GLES30.GL_DEPTH_BUFFER_BIT)
+
+            // 2. The model.
+            setMatrices(proj, camera.modelView(f.yaw, f.pitch, f.scale, aspect))
+            GLES30.glFrontFace(GLES30.GL_CCW)
+            GLES30.glDisable(GLES30.GL_BLEND)
+            GLES30.glUniform1i(uPass, 0)
+            GLES30.glDrawElements(GLES30.GL_TRIANGLES, opaqueCount, GLES30.GL_UNSIGNED_INT, 0)
+
+            // 3. Halos of the light rings: transparent, depth-tested but not written.
+            GLES30.glEnable(GLES30.GL_BLEND)
+            GLES30.glDepthMask(false)
+            GLES30.glUniform1i(uPass, 2)
+            GLES30.glDrawElements(GLES30.GL_TRIANGLES, haloCount, GLES30.GL_UNSIGNED_INT, opaqueCount * 4)
+            GLES30.glDepthMask(true)
+            GLES30.glDisable(GLES30.GL_BLEND)
             GLES30.glBindVertexArray(0)
+        }
+
+        private fun setMatrices(proj: FloatArray, mv: FloatArray) {
+            GLES30.glUniformMatrix4fv(uMvp, 1, false, JawCamera.mul(proj, mv), 0)
+            GLES30.glUniformMatrix4fv(uMv, 1, false, mv, 0)
         }
 
         fun release() {
             GLES30.glDeleteBuffers(2, buffers, 0)
             GLES30.glDeleteVertexArrays(1, vao, 0)
             GLES30.glDeleteProgram(program)
-        }
-
-        private fun multiply(out: FloatArray, a: FloatArray, b: FloatArray) {
-            for (c in 0 until 4) for (r in 0 until 4) {
-                var s = 0f
-                for (k in 0 until 4) s += a[k * 4 + r] * b[c * 4 + k]
-                out[c * 4 + r] = s
-            }
         }
 
         private fun compile(type: Int, src: String): Int {
@@ -265,12 +284,14 @@ class JawGlView(context: Context, private val mesh: JawMesh) : TextureView(conte
             layout(location = 5) in float aOuter;
             uniform mat4 uMvp;
             uniform mat4 uMv;
+            uniform float uMinY;
             out vec3 vN;
             out vec3 vPos;
             out vec3 vColor;
             out float vAo;
             flat out int vZone;
             out float vOuter;
+            out float vHeight;
             void main() {
                 vec4 p = uMv * vec4(aPos, 1.0);
                 vPos = p.xyz;
@@ -279,13 +300,15 @@ class JawGlView(context: Context, private val mesh: JawMesh) : TextureView(conte
                 vAo = aAo;
                 vZone = int(floor(aZone + 0.5));
                 vOuter = aOuter;
+                vHeight = aPos.y - uMinY;
                 gl_Position = uMvp * vec4(aPos, 1.0);
             }
         """.trimIndent()
 
-        // Linear-space lighting: wrapped diffuse from a warm key and a cool fill, sky/ground ambient, glossy
-        // enamel highlights with a Fresnel sheen, softer wet highlights and a red scatter tint on the gums, and a
-        // rim light from behind. Zones tint the natural enamel; a selected zone glows.
+        // A studio, not an operating theatre. Teeth are polished porcelain lit by a large overhead softbox and two
+        // strip lights, whose reflections slide over the glaze as the model turns. Gums are matte soft-touch
+        // silicone with a little light scattered through. Zone data lives in the light rings; teeth are only
+        // tinted, gently, for the selected zone. Filmic tone mapping keeps the whites from clipping.
         private val FRAGMENT = """
             #version 300 es
             precision highp float;
@@ -295,57 +318,110 @@ class JawGlView(context: Context, private val mesh: JawMesh) : TextureView(conte
             in float vAo;
             flat in int vZone;
             in float vOuter;
-            uniform vec3 uZone[8];
+            in float vHeight;
+            uniform vec4 uRing[8];
             uniform int uSelected;
             uniform float uGlow;
-            uniform float uTint;
+            uniform int uPass;
             out vec4 fragColor;
 
             vec3 lin(vec3 c) { return c * c; }
+
+            // Studio environment as seen in a reflection direction (view space).
+            vec3 studio(vec3 r) {
+                float top = smoothstep(0.35, 0.8, r.y) * (1.0 - smoothstep(0.93, 1.0, r.y));
+                float strips = smoothstep(0.72, 0.9, abs(r.x)) * (1.0 - smoothstep(0.35, 0.7, abs(r.y)));
+                float floorGlow = smoothstep(-0.2, -0.75, r.y) * 0.12;
+                return vec3(0.10, 0.105, 0.115) + vec3(1.35, 1.33, 1.30) * top + vec3(0.70, 0.74, 0.80) * strips + floorGlow;
+            }
+
+            vec3 tonemap(vec3 x) {
+                x *= 0.92;
+                return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0);
+            }
 
             void main() {
                 vec3 N = normalize(vN);
                 if (!gl_FrontFacing) N = -N;
                 vec3 V = normalize(-vPos);
+                float ndv = max(0.0, dot(N, V));
+                float fres = pow(1.0 - ndv, 5.0);
+
+                // Light rings and their halos: data shown as light.
+                if (vZone >= 10) {
+                    int z = vZone >= 20 ? vZone - 20 : vZone - 10;
+                    vec3 c = lin(uRing[z].rgb);
+                    float level = uRing[z].a;
+                    float sel = (uSelected == z) ? 1.0 : 0.0;
+                    float dim = (uSelected >= 0 && sel == 0.0) ? 0.28 : 1.0;
+                    float energy = level * dim * (1.0 + sel * (0.35 + 0.45 * uGlow)) * mix(0.15, 1.0, vOuter);
+                    if (vZone >= 20) {
+                        if (uPass != 2) discard;
+                        float a = pow(ndv, 3.0) * 0.22 * energy * vOuter;
+                        fragColor = vec4(sqrt(c) * a * 1.6, a);
+                        return;
+                    }
+                    vec3 core = c * (0.9 + 1.1 * pow(ndv, 0.6)) * energy + vec3(0.18) * pow(ndv, 8.0) * energy;
+                    vec3 outc = tonemap(core);
+                    if (uPass == 1) {
+                        float f = exp(-vHeight / 7.0) * 0.22;
+                        fragColor = vec4(sqrt(outc) * f, f);
+                    } else {
+                        fragColor = vec4(sqrt(outc), 1.0);
+                    }
+                    return;
+                }
+                if (uPass == 2) discard;
+
                 bool gum = vZone < 0;
-                vec3 base = lin(vColor);
-                float sel = 0.0;
+                vec3 Lk = normalize(vec3(-0.25, 0.85, 0.45));
+                vec3 Lf = normalize(vec3(0.8, 0.25, 0.55));
+                vec3 Lr = normalize(vec3(-0.2, 0.45, -0.87));
+                vec3 R = reflect(-V, N);
+                vec3 col;
+
                 if (!gum) {
-                    vec3 zc = mix(lin(uZone[vZone + 1]), lin(uZone[vZone]), vOuter);
-                    float amt = uTint;
+                    // Porcelain.
+                    vec3 albedo = lin(vColor);
+                    float sel = 0.0;
                     if (uSelected >= 0) {
                         sel = (uSelected == vZone ? vOuter : 0.0) + (uSelected == vZone + 1 ? 1.0 - vOuter : 0.0);
-                        amt = mix(uTint * 0.2, 0.8, sel);
+                        albedo = mix(albedo, albedo * lin(uRing[uSelected].rgb) * 1.25, 0.38 * sel);
                     }
-                    base = mix(base, zc, amt);
-                }
-
-                vec3 L1 = normalize(vec3(-0.45, 0.65, 0.62));
-                vec3 L2 = normalize(vec3(0.75, 0.05, 0.45));
-                vec3 L3 = normalize(vec3(0.1, 0.55, -0.83));
-                float wrap = gum ? 0.5 : 0.25;
-                float d1 = max(0.0, (dot(N, L1) + wrap) / (1.0 + wrap));
-                float d2 = max(0.0, (dot(N, L2) + wrap) / (1.0 + wrap));
-                vec3 ambient = mix(vec3(0.16, 0.13, 0.13), vec3(0.40, 0.43, 0.48), N.y * 0.5 + 0.5);
-                vec3 col = base * (ambient * vAo + vec3(1.0, 0.96, 0.90) * d1 * 0.95 + vec3(0.70, 0.80, 0.95) * d2 * 0.32);
-
-                float ndv = max(0.0, dot(N, V));
-                float fres = pow(1.0 - ndv, 3.0);
-                float ndh = max(0.0, dot(N, normalize(L1 + V)));
-                float ndh2 = max(0.0, dot(N, normalize(L2 + V)));
-                if (gum) {
-                    col += vec3(1.0, 0.92, 0.92) * (pow(ndh, 36.0) * 0.28 + pow(ndh2, 36.0) * 0.10);
-                    col += vec3(0.55, 0.10, 0.12) * pow(1.0 - max(0.0, dot(N, L1)), 2.0) * 0.10;
+                    float wrapK = max(0.0, (dot(N, Lk) + 0.3) / 1.3);
+                    float wrapF = max(0.0, (dot(N, Lf) + 0.3) / 1.3);
+                    vec3 ambient = mix(vec3(0.14, 0.13, 0.13), vec3(0.42, 0.44, 0.47), N.y * 0.5 + 0.5) * vAo;
+                    vec3 diffuse = albedo * (ambient + vec3(1.05, 1.03, 1.0) * wrapK * 0.85 + vec3(0.62, 0.68, 0.78) * wrapF * 0.30);
+                    float spec = pow(max(0.0, dot(N, normalize(Lk + V))), 240.0) * 1.6
+                        + pow(max(0.0, dot(N, normalize(Lf + V))), 120.0) * 0.5;
+                    vec3 refl = studio(R) * (0.06 + 0.75 * fres) * mix(0.6, 1.0, vAo);
+                    col = diffuse * (1.0 - 0.6 * fres) + refl + vec3(spec);
+                    col += vec3(0.75, 0.85, 1.0) * fres * max(0.0, dot(N, Lr) + 0.3) * 0.25;
+                    if (sel > 0.0) col += lin(uRing[uSelected].rgb) * sel * (0.10 + 0.12 * uGlow);
+                    col *= mix(1.0, vAo, 0.45);
                 } else {
-                    col += vec3(1.0) * (pow(ndh, 110.0) * 0.75 + pow(ndh, 16.0) * 0.06 + pow(ndh2, 80.0) * 0.25);
-                    col += vec3(0.55, 0.65, 0.78) * fres * 0.22;
+                    // Soft-touch silicone.
+                    vec3 albedo = lin(vColor);
+                    float ndl = dot(N, Lk);
+                    float wrapK = max(0.0, (ndl + 0.6) / 1.6);
+                    float wrapF = max(0.0, (dot(N, Lf) + 0.6) / 1.6);
+                    vec3 ambient = mix(vec3(0.15, 0.12, 0.12), vec3(0.40, 0.40, 0.43), N.y * 0.5 + 0.5) * vAo;
+                    col = albedo * (ambient + vec3(1.0, 0.98, 0.96) * wrapK * 0.80 + vec3(0.65, 0.68, 0.75) * wrapF * 0.25);
+                    col += albedo * vec3(1.0, 0.42, 0.40) * pow(1.0 - max(0.0, ndl), 2.0) * 0.10;
+                    col += vec3(1.0, 0.93, 0.93) * pow(1.0 - ndv, 2.5) * 0.12;
+                    col += vec3(1.0) * pow(max(0.0, dot(N, normalize(Lk + V))), 18.0) * 0.06;
+                    col += studio(R) * fres * 0.10;
+                    col *= mix(1.0, vAo, 0.5);
                 }
-                col += (gum ? vec3(0.95, 0.55, 0.55) : vec3(0.85, 0.92, 1.0)) * fres * max(0.0, dot(N, L3) + 0.2) * 0.30;
-                col *= mix(1.0, vAo, 0.55);
-                col += vec3(0.05, 0.16, 0.15) * sel * (0.5 + 0.5 * uGlow);
 
-                col = col * 1.25 / (1.0 + col * 0.35);
-                fragColor = vec4(sqrt(clamp(col, 0.0, 1.0)), 1.0);
+                vec3 outc = tonemap(col);
+                if (uPass == 1) {
+                    // Glossy floor: the reflection fades out quickly with height above the floor.
+                    float f = exp(-vHeight / 6.0) * 0.16;
+                    fragColor = vec4(sqrt(outc) * f, f);
+                } else {
+                    fragColor = vec4(sqrt(outc), 1.0);
+                }
             }
         """.trimIndent()
     }
