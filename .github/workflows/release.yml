@@ -84,7 +84,7 @@ jobs:
         if: steps.version.outputs.exists == 'false'
         env:
           RELEASE_TAG: ${{ steps.version.outputs.tag }}
-        run: ./gradlew :jawmodel:test testReleaseUnitTest assembleRelease --console=plain
+        run: ./gradlew :jawmodel:test testDebugUnitTest assembleRelease --console=plain
 
       - name: Assets
         if: steps.version.outputs.exists == 'false'
