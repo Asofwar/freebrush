@@ -136,5 +136,5 @@ private fun MainScreen(vm: AppViewModel, brush: BrushInfo) {
             }
         }
     }
-    open?.let { s -> SessionSheet(s) { open = null } }
+    open?.let { s -> SessionSheet(s, sessions) { open = null } }
 }

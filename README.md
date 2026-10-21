@@ -27,6 +27,7 @@ that is needed. FreeBrush reads the data straight from the brush and keeps it on
 | Internet access | none (no `INTERNET` permission) | required |
 | Ads / splash banners | none | server-driven banner |
 | Streaks, two-week chart, daily goal | ✅ | partly |
+| 3D jaw model you can rotate and tap for per-zone stats | ✅ | flat diagram |
 | Export to CSV | ✅ | ❌ |
 | Brush settings (pressure alert, language, brush-head counter) | planned | ✅ |
 | Brushing modes and custom programmes | planned | ✅ |

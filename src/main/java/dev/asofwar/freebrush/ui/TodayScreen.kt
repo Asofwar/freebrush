@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.dp
 import dev.asofwar.freebrush.SyncState
 import dev.asofwar.freebrush.data.BrushInfo
 import dev.asofwar.freebrush.data.BrushSession
+import dev.asofwar.freebrush.ui.jaw.Jaw3D
 import dev.asofwar.freebrush.data.averageScore
 import dev.asofwar.freebrush.data.formatDuration
 import dev.asofwar.freebrush.data.isMorning
@@ -79,7 +80,7 @@ fun TodayScreen(
 
         if (last != null && last.zones.isNotEmpty()) {
             SectionCard(Modifier.staggeredEntrance(4), title = "Зоны последней чистки") {
-                MouthMap(last)
+                Jaw3D(last, sessions)
             }
         }
 

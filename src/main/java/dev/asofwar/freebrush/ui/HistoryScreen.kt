@@ -40,6 +40,7 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import dev.asofwar.freebrush.data.BrushSession
+import dev.asofwar.freebrush.ui.jaw.Jaw3D
 import dev.asofwar.freebrush.data.averageScore
 import dev.asofwar.freebrush.data.byDay
 import dev.asofwar.freebrush.data.formatDuration
@@ -126,7 +127,7 @@ private fun SessionRow(s: BrushSession, modifier: Modifier, onClick: () -> Unit)
 /** Session details in a bottom sheet: score, numbers, the mouth map and per-zone seconds. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SessionSheet(s: BrushSession, onClose: () -> Unit) {
+fun SessionSheet(s: BrushSession, history: List<BrushSession>, onClose: () -> Unit) {
     val state = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(onDismissRequest = onClose, sheetState = state) {
         Column(
@@ -149,7 +150,7 @@ fun SessionSheet(s: BrushSession, onClose: () -> Unit) {
             }
             if (s.zones.isNotEmpty()) {
                 SectionCard(title = "Зоны") {
-                    MouthMap(s)
+                    Jaw3D(s, history)
                     Spacer(Modifier.height(16.dp))
                     ZoneList(s)
                 }
