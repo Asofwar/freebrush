@@ -40,3 +40,6 @@ All notable changes to this project are documented here. The format follows
   10 steps (a 22-byte second packet) get no answer, and a 40-byte packet worked once and hung the brush once.
 - The settings read ignores a continuation fragment that arrives without its header and asks again, after the brush
   dropped the first fragment once right after a programme write.
+- Growth level on the brush screen (bronze, silver, gold...): each sync reads the brush's new growth points (`0308`),
+  adds them to the total and writes it back as the base (`0226`), as the official app was meant to but never did.
+  Tested: base 100 turned "bronze 1" into "gold 2".

@@ -35,6 +35,7 @@ class MainActivity : ComponentActivity() {
         if (!BuildConfig.DEBUG || intent == null) return
         if (intent.getStringExtra("probe") == "settings") vm.runProbe()
         intent.getStringExtra("send")?.let { list -> vm.sendRaw(list.split(',').map { it.trim() }.filter { it.isNotEmpty() }) }
+        intent.getStringExtra("growth")?.toIntOrNull()?.let { vm.setGrowthTotal(it) }
         // `prog 231|2:30,16:30` sends programme 231 with gear:seconds steps.
         intent.getStringExtra("prog")?.let { spec ->
             val (num, steps) = spec.split('|')

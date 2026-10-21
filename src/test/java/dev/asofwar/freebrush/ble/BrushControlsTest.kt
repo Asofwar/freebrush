@@ -43,6 +43,17 @@ class BrushControlsTest {
     }
 
     @Test
+    fun growth() {
+        // Replies of the user's X Pro Digital before and after writing base 100.
+        assertEquals(4, BrushControls.parseGrowth(hex("030800040a152002d7533df84f4b")))
+        assertEquals(0, BrushControls.parseGrowth(hex("030800000a152002d7533df84f4b")))
+        assertEquals(null, BrushControls.parseGrowth(hex("02264f4b")))
+        assertEquals("02260064", BrushControls.growthBase(100).toHex())
+        assertTrue(BrushControls.hasGrowth("HH 0003 0004"))
+        assertFalse(BrushControls.hasGrowth("Rev.D"))
+    }
+
+    @Test
     fun shortProgrammeIsOnePacket() {
         val packets = BrushControls.programme(231, List(3) { Step(2, 30) }, prompt = false)
         assertEquals(listOf("0206e703060" + "21e06021e06021e0005"), packets.map { it.toHex() })

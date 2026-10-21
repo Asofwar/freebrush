@@ -111,6 +111,7 @@ fun BrushScreen(vm: AppViewModel, brush: BrushInfo, sync: SyncState) {
             InfoRow("Прошивка", brush.firmware)
             InfoRow("Железо", brush.hardware)
             InfoRow("Адрес", brush.address)
+            if (BrushControls.hasGrowth(brush.hardware)) InfoRow("Очки роста (уровень на экране щётки)", brush.growthTotal.toString())
         }
 
         if (log.isNotEmpty()) SyncLog(log, Modifier.staggeredEntrance(6))

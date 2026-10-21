@@ -20,6 +20,8 @@ data class BrushInfo(
     val headWearMax: Int? = null,
     /** Raw settings block last read from the brush (hex), see OcleanProtocol.Settings. */
     val settingsHex: String? = null,
+    /** Growth points FreeBrush has collected from the brush; written back to it as the base of its level. */
+    val growthTotal: Int = 0,
     val lastSyncMillis: Long? = null,
 )
 
@@ -43,6 +45,7 @@ class BrushPrefs(context: Context) {
             headWear = int("headWear"),
             headWearMax = int("headWearMax"),
             settingsHex = prefs.getString("settings", null),
+            growthTotal = prefs.getInt("growth", 0),
             lastSyncMillis = if (prefs.contains("lastSync")) prefs.getLong("lastSync", 0) else null,
         )
     }
@@ -61,6 +64,7 @@ class BrushPrefs(context: Context) {
                 info.headWear?.let { putInt("headWear", it) }
                 info.headWearMax?.let { putInt("headWearMax", it) }
                 info.settingsHex?.let { putString("settings", it) }
+                putInt("growth", info.growthTotal)
                 info.lastSyncMillis?.let { putLong("lastSync", it) }
             }
         }.apply()

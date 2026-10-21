@@ -88,7 +88,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             _log.value = lines.toList()
             _sync.value = SyncState.Running("Подключение…")
             try {
-                val result = client.sync(info.address) { step ->
+                val result = client.sync(info.address, info.growthTotal) { step ->
                     lines += step
                     _log.value = lines.toList()
                     // Raw packet lines go to the log only.
@@ -106,6 +106,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                         headWear = result.settings?.headUsedTime ?: info.headWear,
                         headWearMax = result.settings?.headMaxTime ?: info.headWearMax,
                         settingsHex = result.settings?.raw?.toHex() ?: info.settingsHex,
+                        growthTotal = result.growthTotal ?: info.growthTotal,
                         lastSyncMillis = System.currentTimeMillis(),
                     ),
                 )
@@ -259,6 +260,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun deleteProgramme(p: Programme) = custom.delete(p.num)
 
     fun newProgrammeNum(): Int? = custom.nextNum()
+
+    /** Debug: sets the stored growth total, e.g. to the points the brush really had before an experiment. */
+    fun setGrowthTotal(total: Int) {
+        val info = brush.value ?: return
+        prefs.save(info.copy(growthTotal = total))
+    }
 
     /** Debug: writes raw hex commands one by one and reads the settings back; replies go to the log. */
     fun sendRaw(commands: List<String>) = onBrush("Отправка команд…") { address, onStep ->

@@ -55,6 +55,29 @@ object BrushControls {
     /** Brush-head wear limit, big-endian; the brush counts the wear in the same unit (minutes, most likely). */
     fun headLimit(value: Int): ByteArray = byteArrayOf(0x02, 0x17, (value shr 8).toByte(), value.toByte())
 
+    /**
+     * Growth points behind the level the brush shows on its screen (bronze, silver, gold...). The brush counts new
+     * points itself (`0308` returns them with a tag); the app is meant to add them to the running total and write the
+     * total back as the base (`0226`), after which the brush starts counting new points from zero. Tested on an
+     * X Pro Digital: base 100 turned "bronze 1" into "gold 2", and the new-points counter dropped to 0.
+     */
+    val GROWTH_READ: ByteArray = byteArrayOf(0x03, 0x08)
+
+    fun growthBase(total: Int): ByteArray {
+        val v = total.coerceIn(0, 0xFFFF)
+        return byteArrayOf(0x02, 0x26, (v shr 8).toByte(), v.toByte())
+    }
+
+    /** New growth points from a `0308` reply (`03 08 value(2) tag(8) 'O' 'K'`), or null if it is not one. */
+    fun parseGrowth(packet: ByteArray): Int? {
+        if (packet.size < 6 || packet[0] != 0x03.toByte() || packet[1] != 0x08.toByte()) return null
+        if (packet[packet.size - 2] != 'O'.code.toByte() || packet[packet.size - 1] != 'K'.code.toByte()) return null
+        return ((packet[2].toInt() and 0xFF) shl 8) or (packet[3].toInt() and 0xFF)
+    }
+
+    /** Growth points are handled by the type-0003 firmware only; other models use 0308 for something else. */
+    fun hasGrowth(hardware: String?): Boolean = hardware?.startsWith("HH 0003") == true
+
     /** One step of a programme: motor [gear] for [seconds]. */
     data class Step(val gear: Int, val seconds: Int)
 
