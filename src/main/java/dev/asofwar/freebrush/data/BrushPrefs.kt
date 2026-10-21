@@ -29,8 +29,12 @@ data class BrushInfo(
     val headWearMax: Int? = null,
     /** Raw settings block last read from the brush (hex), see OcleanProtocol.Settings. */
     val settingsHex: String? = null,
-    /** Growth points FreeBrush has collected from the brush; written back to it as the base of its level. */
-    val growthTotal: Int = 0,
+    /**
+     * Growth points FreeBrush has collected from the brush; written back to it as the base of its level. Null for a
+     * brush added to the app: its base is unknown, so the brush keeps counting its level itself and nothing is
+     * written, which keeps the level a reinstall or a second phone would otherwise reset.
+     */
+    val growthTotal: Int? = null,
     val lastSyncMillis: Long? = null,
 ) {
     val title: String get() = label ?: name ?: "Щётка"
@@ -82,7 +86,7 @@ data class BrushInfo(
                 headWear = int("headWear"),
                 headWearMax = int("headWearMax"),
                 settingsHex = str("settings"),
-                growthTotal = o.optInt("growth", 0),
+                growthTotal = if (o.isNull("growth")) null else o.optInt("growth"),
                 lastSyncMillis = if (o.isNull("lastSync")) null else o.optLong("lastSync"),
             )
         }
@@ -121,12 +125,15 @@ class BrushPrefs(private val context: Context) {
         save()
     }
 
-    /** Applies [change] to the stored record of brush [id], if it is still there. */
+    /**
+     * Applies [change] to the stored record of brush [id], if it is still there. [durable] writes it to disk before
+     * returning, for what must survive the process being killed right after (the growth total the brush now uses).
+     */
     @Synchronized
-    fun update(id: String, change: (BrushInfo) -> BrushInfo) {
+    fun update(id: String, durable: Boolean = false, change: (BrushInfo) -> BrushInfo) {
         if (list.none { it.id == id }) return
         list = list.map { if (it.id == id) change(it) else it }
-        save()
+        save(durable)
     }
 
     @Synchronized
@@ -146,14 +153,21 @@ class BrushPrefs(private val context: Context) {
 
     private fun read(): List<BrushInfo> {
         val text = prefs.getString(KEY_LIST, null) ?: return emptyList()
-        val arr = JSONArray(text)
-        return List(arr.length()) { BrushInfo.fromJson(arr.getJSONObject(it)) }
+        return try {
+            val arr = JSONArray(text)
+            List(arr.length()) { BrushInfo.fromJson(arr.getJSONObject(it)) }
+        } catch (e: Exception) {
+            // Unreadable list: keep it aside and start over rather than crash on every start.
+            prefs.edit().putString(KEY_LIST + "_corrupt", text).remove(KEY_LIST).commit()
+            emptyList()
+        }
     }
 
-    private fun save() {
+    private fun save(durable: Boolean = false) {
         val arr = JSONArray()
         list.forEach { arr.put(it.toJson()) }
-        prefs.edit().putString(KEY_LIST, arr.toString()).putString(KEY_CURRENT, currentId).apply()
+        val edit = prefs.edit().putString(KEY_LIST, arr.toString()).putString(KEY_CURRENT, currentId)
+        if (durable) edit.commit() else edit.apply()
         _brushes.value = list
         _current.value = list.firstOrNull { it.id == currentId }
     }

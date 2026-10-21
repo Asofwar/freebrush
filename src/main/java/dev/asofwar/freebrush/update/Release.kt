@@ -31,14 +31,15 @@ data class Release(
     val page: String,
     val apkUrl: String,
     val apkSize: Long,
-    /** `sha256sum` line for the APK, when the release publishes one. */
-    val sha256Url: String?,
+    /** `sha256sum` line for the APK; releases without one are not offered. */
+    val sha256Url: String,
 )
 
 object ReleaseParser {
     /**
      * Reads the GitHub "latest release" JSON. Returns null for a draft or pre-release, a tag that is not a version,
-     * or a release without an HTTPS APK asset. Throws [org.json.JSONException] when the JSON is malformed.
+     * or a release without an HTTPS APK asset and its `.sha256`. Throws [org.json.JSONException] when the JSON is
+     * malformed.
      */
     fun parse(json: String): Release? {
         val root = JSONObject(json)
@@ -52,6 +53,7 @@ object ReleaseParser {
         val sha256Url = assets.firstOrNull { it.optString("name") == apk.optString("name") + ".sha256" }
             ?.optString("browser_download_url")
             ?.takeIf { it.startsWith("https://") }
+            ?: return null
         return Release(version, tag, root.optString("body"), root.optString("html_url"), apkUrl, apk.optLong("size"), sha256Url)
     }
 

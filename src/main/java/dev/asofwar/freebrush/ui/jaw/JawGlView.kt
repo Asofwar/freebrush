@@ -45,8 +45,10 @@ class JawGlView(context: Context, private val jaw: BakedJaw, private val camera:
         val glow: Float,
     )
 
-    private val thread = HandlerThread("jaw-gl").apply { start() }
-    private val handler = Handler(thread.looper)
+    // The GL thread lives while the view is attached; it is created again if the view comes back.
+    private var thread: HandlerThread? = null
+    private var handler: Handler? = null
+    private var detached = false
     private val latest = AtomicReference<Frame?>(null)
     private val scheduled = AtomicBoolean(false)
     private var egl: Egl? = null
@@ -61,7 +63,7 @@ class JawGlView(context: Context, private val jaw: BakedJaw, private val camera:
 
     fun submit(frame: Frame) {
         latest.set(frame)
-        if (!scheduled.getAndSet(true)) handler.post(drawLatest)
+        if (!scheduled.getAndSet(true)) handler?.post(drawLatest) ?: scheduled.set(false)
     }
 
     private val drawLatest = Runnable {
@@ -73,8 +75,16 @@ class JawGlView(context: Context, private val jaw: BakedJaw, private val camera:
         e.swap()
     }
 
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        detached = false
+        if (thread?.isAlive != true) {
+            thread = HandlerThread("jaw-gl").apply { start() }.also { handler = Handler(it.looper) }
+        }
+    }
+
     override fun onSurfaceTextureAvailable(surface: SurfaceTexture, w: Int, h: Int) {
-        handler.post {
+        handler?.post {
             width = w; height = h
             try {
                 egl = Egl(surface)
@@ -87,29 +97,46 @@ class JawGlView(context: Context, private val jaw: BakedJaw, private val camera:
     }
 
     override fun onSurfaceTextureSizeChanged(surface: SurfaceTexture, w: Int, h: Int) {
-        handler.post {
+        handler?.post {
             width = w; height = h
             drawLatest.run()
         }
     }
 
     override fun onSurfaceTextureDestroyed(surface: SurfaceTexture): Boolean {
-        // Tear down on the GL thread, then release the texture ourselves (hence false).
-        handler.post {
+        val h = handler
+        if (h == null) {
+            surface.release()
+            return false
+        }
+        // Tear down on the GL thread, then release the texture ourselves (hence false). When the view is leaving the
+        // window the thread quits after that, in the same queue, so nothing is left unreleased.
+        h.post {
             renderer?.release()
             renderer = null
             egl?.release()
             egl = null
             surface.release()
         }
+        if (detached) quitThread()
         return false
     }
 
     override fun onSurfaceTextureUpdated(surface: SurfaceTexture) = Unit
 
     override fun onDetachedFromWindow() {
+        detached = true
+        // The surface, if there is one, is destroyed right after this and its teardown quits the thread.
+        val hasSurface = isAvailable
         super.onDetachedFromWindow()
-        handler.post { thread.quitSafely() }
+        if (!hasSurface) quitThread()
+    }
+
+    private fun quitThread() {
+        val t = thread ?: return
+        handler?.post { t.quitSafely() }
+        thread = null
+        handler = null
     }
 
     /** EGL display, context and window surface for one SurfaceTexture, with 4x MSAA when available. */

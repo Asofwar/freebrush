@@ -43,10 +43,8 @@ class UpdateClient(private val repository: String, private val userAgent: String
      * A partial or mismatching file is deleted. [progress] gets (downloaded, total) bytes; total is 0 when unknown.
      */
     fun download(release: Release, target: File, cancelled: () -> Boolean, progress: (Long, Long) -> Unit) {
-        val expected = release.sha256Url?.let { url ->
-            val text = fetchText(url)
-            ReleaseParser.parseSha256(text) ?: throw UpdateError("Контрольная сумма релиза в неизвестном формате")
-        }
+        val expected = ReleaseParser.parseSha256(fetchText(release.sha256Url))
+            ?: throw UpdateError("Контрольная сумма релиза в неизвестном формате")
         val partial = File(target.path + ".part")
         var done = false
         val connection = open(release.apkUrl)
@@ -69,7 +67,7 @@ class UpdateClient(private val repository: String, private val userAgent: String
                     }
                 }
             }
-            if (expected != null && digest.digest().joinToString("") { "%02x".format(it) } != expected) {
+            if (digest.digest().joinToString("") { "%02x".format(it) } != expected) {
                 throw UpdateError("APK не совпал с контрольной суммой релиза")
             }
             if (!partial.renameTo(target)) throw UpdateError("Не удалось сохранить APK")

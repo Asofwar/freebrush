@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Brushing history and brushes never go to cloud backup; moving to a new phone (device transfer) keeps them,
+     including the growth totals the brushes' levels depend on. -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="root" />
+        <exclude domain="file" />
+        <exclude domain="database" />
+        <exclude domain="sharedpref" />
+        <exclude domain="external" />
+    </cloud-backup>
+    <device-transfer>
+        <include domain="file" />
+        <include domain="sharedpref" />
+    </device-transfer>
+</data-extraction-rules>

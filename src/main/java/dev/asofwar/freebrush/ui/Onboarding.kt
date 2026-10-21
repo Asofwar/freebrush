@@ -7,6 +7,17 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import android.bluetooth.BluetoothAdapter
+import android.bluetooth.BluetoothManager
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.ui.draw.rotate
@@ -60,7 +71,7 @@ import dev.asofwar.freebrush.ble.scanDevices
 import kotlin.math.sin
 
 @Composable
-fun PermissionScreen(onRequest: () -> Unit) {
+fun PermissionScreen(blocked: Boolean, onRequest: () -> Unit) {
     Column(
         Modifier.fillMaxSize().safeDrawingPadding().padding(28.dp),
         verticalArrangement = Arrangement.Center,
@@ -79,12 +90,21 @@ fun PermissionScreen(onRequest: () -> Unit) {
         Spacer(Modifier.height(28.dp))
         Column(Modifier.staggeredEntrance(3), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Feature(Icons.Bluetooth, "Забирает чистки со щётки по Bluetooth")
-            Feature(Icons.Check, "Без интернета: у приложения нет на него разрешения")
+            Feature(Icons.Check, "Без аккаунта и облака: в интернет — только за обновлениями, и это выключается")
             Feature(Icons.Star, "Оценка, зоны и серия дней — на телефоне")
         }
         Spacer(Modifier.height(32.dp))
+        if (blocked) {
+            Text(
+                "Доступ к устройствам поблизости запрещён. Включи его в настройках приложения: Разрешения → Устройства поблизости.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(Modifier.height(12.dp))
+        }
         Button(onClick = onRequest, modifier = Modifier.fillMaxWidth().height(52.dp).staggeredEntrance(4)) {
-            Text("Разрешить Bluetooth")
+            Text(if (blocked) "Открыть настройки" else "Разрешить Bluetooth")
         }
     }
 }
@@ -144,12 +164,20 @@ fun PairScreen(
     var error by remember { mutableStateOf<String?>(null) }
     var showAll by rememberSaveable { mutableStateOf(false) }
     var picked by remember { mutableStateOf<FoundDevice?>(null) }
-    LaunchedEffect(Unit) {
+    val bluetoothOn = rememberBluetoothOn()
+    var attempt by remember { mutableIntStateOf(0) }
+    val enableBluetooth = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {}
+    // The scan restarts when Bluetooth comes on and on "Повторить".
+    LaunchedEffect(bluetoothOn, attempt) {
+        error = null
+        if (!bluetoothOn) return@LaunchedEffect
         try {
             scanDevices(context).collect { d ->
                 val i = found.indexOfFirst { it.address == d.address }
                 if (i >= 0) found[i] = d else found += d
             }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             error = e.message
         }
@@ -189,7 +217,18 @@ fun PairScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
                     textAlign = TextAlign.Center,
                 )
-                error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 8.dp)) }
+                if (!bluetoothOn) {
+                    Spacer(Modifier.height(14.dp))
+                    Text("Bluetooth выключен", color = MaterialTheme.colorScheme.error)
+                    Spacer(Modifier.height(8.dp))
+                    Button(onClick = { enableBluetooth.launch(Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE)) }) {
+                        Text("Включить Bluetooth")
+                    }
+                }
+                error?.let {
+                    Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 8.dp))
+                    TextButton(onClick = { attempt++ }) { Text("Повторить") }
+                }
                 Spacer(Modifier.height(12.dp))
             }
         }
@@ -264,6 +303,29 @@ private fun ScanHero(modifier: Modifier) {
         }
         Icon(Icons.Brush, null, tint = color, modifier = Modifier.size(64.dp))
     }
+}
+
+/** Whether the Bluetooth adapter is on, kept current by the system's state broadcast. */
+@Composable
+private fun rememberBluetoothOn(): Boolean {
+    val context = LocalContext.current
+    val adapter = remember { context.getSystemService(BluetoothManager::class.java)?.adapter }
+    var on by remember { mutableStateOf(adapter?.isEnabled == true) }
+    DisposableEffect(adapter) {
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(c: Context, intent: Intent) {
+                on = adapter?.isEnabled == true
+            }
+        }
+        ContextCompat.registerReceiver(
+            context,
+            receiver,
+            IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED),
+            ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
+        onDispose { context.unregisterReceiver(receiver) }
+    }
+    return on
 }
 
 /** Signal strength as four bars from RSSI. */

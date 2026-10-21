@@ -16,6 +16,9 @@ import dev.asofwar.freebrush.ble.OcleanProtocol.SESSION_STREAM
 import dev.asofwar.freebrush.ble.OcleanProtocol.WRITE
 import dev.asofwar.freebrush.data.BrushSession
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -56,7 +59,7 @@ class OcleanClient(private val context: Context) {
      * the rest of the sync finishes: from then on the brush counts from zero, so the caller must store it even if the
      * sync is cancelled or fails afterwards.
      */
-    suspend fun sync(address: String, growthTotal: Int, onGrowth: (Int) -> Unit, onStep: (String) -> Unit): SyncResult =
+    suspend fun sync(address: String, growthTotal: Int?, onGrowth: (Int) -> Unit, onStep: (String) -> Unit): SyncResult =
         withBrush(address, onStep) { s -> exchange(s, growthTotal, onGrowth, onStep) }
 
     /** A connected brush, for writing settings: one command in flight at a time, as the brush expects. */
@@ -148,6 +151,9 @@ class OcleanClient(private val context: Context) {
                 onStep(if (attempt == 0) "Подключение…" else "Подключение, попытка ${attempt + 1}…")
                 s.connect()
                 return s
+            } catch (e: CancellationException) {
+                s.close()
+                throw e
             } catch (e: Exception) {
                 s.close()
                 last = e
@@ -160,7 +166,7 @@ class OcleanClient(private val context: Context) {
         )
     }
 
-    private suspend fun exchange(s: GattSession, growthTotal: Int, onGrowth: (Int) -> Unit, onStep: (String) -> Unit): SyncResult = coroutineScope {
+    private suspend fun exchange(s: GattSession, growthTotal: Int?, onGrowth: (Int) -> Unit, onStep: (String) -> Unit): SyncResult = coroutineScope {
         // Log every notification: the log is what users attach to device reports.
         val logger = launchLogger(s, onStep)
 
@@ -189,7 +195,12 @@ class OcleanClient(private val context: Context) {
         onStep("Чтение чисток…")
         val sessions = readSessions(s, tzIndex, onStep)
 
-        val growth = if (BrushControls.hasGrowth(hardware)) syncGrowth(s, growthTotal, onStep)?.also(onGrowth) else null
+        val growth = when {
+            !BrushControls.hasGrowth(hardware) -> null
+            // A brush added to the app keeps its own level: its base is unknown, and writing one would reset it.
+            growthTotal == null -> null.also { onStep("Очки роста: уровень ведёт сама щётка") }
+            else -> syncGrowth(s, growthTotal, onGrowth, onStep)
+        }
         onStep("Готово: заряд ${battery ?: "?"} %, чисток в щётке ${sessions.size}")
 
         logger.cancel()
@@ -206,20 +217,49 @@ class OcleanClient(private val context: Context) {
 
     /**
      * Adds the brush's new growth points to [total] and writes the sum back as its base, which also clears the
-     * brush's counter. Returns the new total only when the brush took it, so points are never counted twice; if the
-     * read fails nothing is written, so no points are lost either. A missing ack is checked by reading the counter
-     * again: back at zero means the brush took the new base.
+     * brush's counter. The new total goes to [onGrowth] the moment the write is delivered, before the ack, and that
+     * part cannot be cancelled: from then on the brush counts from zero, so a total lost with a dropped ack or a
+     * cancelled sync would make the level on the brush fall back next time. Without an ack the counter is read again;
+     * if it still holds the points, the brush ignored the write and the old total is put back. Returns the total the
+     * app keeps now, or null when nothing was written.
      */
-    private suspend fun syncGrowth(s: GattSession, total: Int, onStep: (String) -> Unit): Int? {
+    private suspend fun syncGrowth(s: GattSession, total: Int, onGrowth: (Int) -> Unit, onStep: (String) -> Unit): Int? {
         val reply = request(s, WRITE, BrushControls.GROWTH_READ, onStep) { BrushControls.parseGrowth(it.value) != null } ?: return null
         val added = BrushControls.parseGrowth(reply.value) ?: return null
+        if (added == 0) {
+            onStep("Очки роста: новых нет, всего $total")
+            return total
+        }
         val newTotal = (total + added).coerceAtMost(0xFFFF)
         val cmd = BrushControls.growthBase(newTotal)
-        val ok = request(s, WRITE, cmd, onStep) { OcleanProtocol.isAck(it.value, cmd) } != null ||
-            (added > 0 && request(s, WRITE, BrushControls.GROWTH_READ, onStep) { BrushControls.parseGrowth(it.value) != null }
-                ?.let { BrushControls.parseGrowth(it.value) } == 0)
-        onStep(if (ok) "Очки роста: +$added, всего $newTotal" else "Щётка не подтвердила очки роста")
-        return if (ok) newTotal else null
+        return withContext(NonCancellable) {
+            onStep("→ ${WRITE.short()} ${cmd.toHex()}")
+            val ack = async(start = CoroutineStart.UNDISPATCHED) {
+                withTimeoutOrNull(5_000) { s.notifications.first { OcleanProtocol.isAck(it.value, cmd) } }
+            }
+            try {
+                s.write(SERVICE, WRITE, cmd)
+            } catch (e: GattException) {
+                ack.cancel()
+                onStep("Очки роста не записаны: ${e.message}")
+                return@withContext null
+            }
+            onGrowth(newTotal)
+            if (ack.await() != null) {
+                onStep("Очки роста: +$added, всего $newTotal")
+                return@withContext newTotal
+            }
+            val counter = request(s, WRITE, BrushControls.GROWTH_READ, onStep) { BrushControls.parseGrowth(it.value) != null }
+                ?.let { BrushControls.parseGrowth(it.value) }
+            if (counter != null && counter >= added) {
+                onGrowth(total)
+                onStep("Щётка не приняла очки роста, всего по-прежнему $total")
+                total
+            } else {
+                onStep("Очки роста: +$added, всего $newTotal (без подтверждения)")
+                newTotal
+            }
+        }
     }
 
     private fun kotlinx.coroutines.CoroutineScope.launchLogger(s: GattSession, onStep: (String) -> Unit) =

@@ -93,9 +93,13 @@ Builds between releases are named `X.Y.Z-dev+<commit>`.
 - Bluetooth permissions: `BLUETOOTH_SCAN` (flagged `neverForLocation`) and `BLUETOOTH_CONNECT`.
 - Update permissions: `INTERNET` for the update check and download, `REQUEST_INSTALL_PACKAGES` and
   `UPDATE_PACKAGES_WITHOUT_USER_ACTION` to install the update. The check is one request to
-  `api.github.com` for this repository's latest release; GitHub sees your IP address and the app
-  version, nothing else is sent. The APK comes from GitHub's release downloads and must match the
-  published SHA-256. With the check turned off, the app makes no network requests at all.
+  `api.github.com` for this repository's latest release; GitHub sees your IP address and the app and
+  Android versions in the User-Agent, nothing else is sent. The APK comes from GitHub's release downloads,
+  must match the SHA-256 published with it and be signed with the same key as the installed app.
+  With the check turned off, the app makes no network requests at all.
+- No cloud backup: Android's backup to Google Drive excludes the app's data. Moving to a new phone with
+  Android's device transfer still brings the history and brushes along.
+- Bluetooth packets are written to the system log only in debug builds.
 - Brushing history is stored in the app's private storage (`sessions.json`) and leaves the phone
   only when you export it yourself.
 - No analytics, no crash reporting, no third-party SDKs besides AndroidX and Jetpack Compose.

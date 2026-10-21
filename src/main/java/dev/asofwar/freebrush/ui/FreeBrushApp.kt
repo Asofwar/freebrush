@@ -38,7 +38,13 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
+import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
+import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.asofwar.freebrush.AppViewModel
 import dev.asofwar.freebrush.SyncState
@@ -56,12 +62,18 @@ private enum class Tab(val title: String, val icon: ImageVector) {
 @Composable
 fun FreeBrushApp(vm: AppViewModel) {
     val context = LocalContext.current
-    var granted by remember {
-        mutableStateOf(BT_PERMISSIONS.all { ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED })
-    }
+    fun check() = BT_PERMISSIONS.all { ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED }
+    var granted by remember { mutableStateOf(check()) }
+    // Denied and Android will not ask again: only the app's settings page can grant it now.
+    var blocked by rememberSaveable { mutableStateOf(false) }
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { res ->
         granted = res.values.all { it }
+        val activity = context as? android.app.Activity
+        blocked = !granted && activity != null &&
+            BT_PERMISSIONS.none { ActivityCompat.shouldShowRequestPermissionRationale(activity, it) }
     }
+    // Back from the settings page, or the permission revoked while the app was away.
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { granted = check() }
     val brush by vm.brush.collectAsStateWithLifecycle()
     val brushes by vm.brushes.collectAsStateWithLifecycle()
     // Adding a brush or replacing the one on screen opens the scan over the main screen.
@@ -77,7 +89,15 @@ fun FreeBrushApp(vm: AppViewModel) {
     Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxSize()) {
     AnimatedContent(screen, transitionSpec = { fadeIn(tween(400)) togetherWith fadeOut(tween(200)) }, label = "root") { s ->
         when (s) {
-            0 -> PermissionScreen { launcher.launch(BT_PERMISSIONS) }
+            0 -> PermissionScreen(blocked) {
+                if (blocked) {
+                    context.startActivity(
+                        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", context.packageName, null)),
+                    )
+                } else {
+                    launcher.launch(BT_PERMISSIONS)
+                }
+            }
             1 -> {
                 val mode = pairing ?: PairMode.First
                 PairScreen(
@@ -110,8 +130,9 @@ private fun MainScreen(vm: AppViewModel, brush: BrushInfo, brushes: List<BrushIn
     // Only a sync the user pulled for shows the pull indicator; automatic ones show in the sync chip.
     var pulled by remember { mutableStateOf(false) }
 
-    // Pull fresh data every time the app opens.
-    LaunchedEffect(Unit) { vm.syncOnOpen() }
+    // Sync when the main screen first shows (after pairing or granting Bluetooth); MainActivity.onStart covers
+    // returns from the background. The view model skips repeats within a couple of minutes, e.g. on rotation.
+    LaunchedEffect(Unit) { vm.onAppStart() }
     LaunchedEffect(sync) {
         if (sync !is SyncState.Running) pulled = false
         when (val s = sync) {

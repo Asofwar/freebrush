@@ -9,15 +9,20 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import java.io.File
+import java.io.FileOutputStream
 
 /**
  * Brushing history of one brush ([brushId]) in a JSON file in app storage.
  *
  * A few sessions a day stay well under a megabyte for years, so a plain file beats a database here.
- * Writes go to a temporary file first and replace the old one, so a crash never leaves half a file.
+ * Writes go to a synced temporary file that then replaces the old one, which is kept as a backup: a crash or a power
+ * cut leaves either file readable. A file that cannot be parsed is set aside as `.corrupt-<time>` instead of
+ * crashing the app on every start.
  */
-class SessionStore(context: Context, brushId: String) {
-    private val file = fileFor(context, brushId)
+class SessionStore(private val file: File) {
+    constructor(context: Context, brushId: String) : this(fileFor(context, brushId))
+
+    private val backup = File(file.path + ".bak")
     private val lock = Mutex()
     private val _sessions = MutableStateFlow<List<BrushSession>>(emptyList())
 
@@ -49,6 +54,7 @@ class SessionStore(context: Context, brushId: String) {
     suspend fun clear() = withContext(Dispatchers.IO) {
         lock.withLock {
             file.delete()
+            backup.delete()
             _sessions.value = emptyList()
         }
     }
@@ -64,20 +70,31 @@ class SessionStore(context: Context, brushId: String) {
     private fun merge(old: BrushSession, new: BrushSession) = if (!old.isComplete && new.isComplete) new else old
 
     private fun readFile(): List<BrushSession> {
-        if (!file.exists()) return emptyList()
-        val arr = JSONArray(file.readText())
-        return List(arr.length()) { BrushSession.fromJson(arr.getJSONObject(it)) }
-            .sortedByDescending { it.time }
+        for (f in listOf(file, backup)) {
+            if (!f.exists()) continue
+            try {
+                val arr = JSONArray(f.readText())
+                return List(arr.length()) { BrushSession.fromJson(arr.getJSONObject(it)) }.sortedByDescending { it.time }
+            } catch (e: Exception) {
+                // Keep the damaged file for a device report, and fall back to the backup.
+                f.renameTo(File(f.path + ".corrupt-" + System.currentTimeMillis()))
+            }
+        }
+        return emptyList()
     }
 
     private fun writeFile(all: List<BrushSession>) {
         val arr = JSONArray()
         all.forEach { arr.put(it.toJson()) }
-        val tmp = File(file.parentFile, file.name + ".tmp")
-        tmp.writeText(arr.toString())
-        if (!tmp.renameTo(file)) {
-            file.delete()
-            tmp.renameTo(file)
+        val tmp = File(file.path + ".tmp")
+        FileOutputStream(tmp).use { out ->
+            out.write(arr.toString().toByteArray())
+            out.fd.sync()
         }
+        if (file.exists()) {
+            backup.delete()
+            file.renameTo(backup)
+        }
+        if (!tmp.renameTo(file)) throw java.io.IOException("Не удалось сохранить историю")
     }
 }

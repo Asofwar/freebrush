@@ -53,7 +53,8 @@ fun BrushScreen(vm: AppViewModel, brush: BrushInfo, sync: SyncState, onPair: (Pa
     val action by vm.action.collectAsStateWithLifecycle()
     val custom by vm.customProgrammes.collectAsStateWithLifecycle()
     val settings = brush.settingsHex?.let { hex(it) }
-    val busy = sync is SyncState.Running || action is ActionState.Running
+    // A write queues behind a running sync, so only another write in progress locks the controls.
+    val busy = action is ActionState.Running
     var programmes by remember { mutableStateOf(false) }
     var confirmReplace by remember { mutableStateOf(false) }
     var confirmRemove by remember { mutableStateOf(false) }
@@ -117,7 +118,9 @@ fun BrushScreen(vm: AppViewModel, brush: BrushInfo, sync: SyncState, onPair: (Pa
             InfoRow("Прошивка", brush.firmware)
             InfoRow("Железо", brush.hardware)
             InfoRow("Адрес", brush.address)
-            if (BrushControls.hasGrowth(brush.hardware)) InfoRow("Очки роста (уровень на экране щётки)", brush.growthTotal.toString())
+            if (BrushControls.hasGrowth(brush.hardware)) {
+                InfoRow("Очки роста (уровень на экране щётки)", brush.growthTotal?.toString() ?: "ведёт сама щётка")
+            }
         }
 
         if (log.isNotEmpty()) SyncLog(log, Modifier.staggeredEntrance(6))

@@ -26,6 +26,7 @@ class MainActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         Updater.get(this).autoCheck()
+        vm.onAppStart()
     }
 
     override fun onNewIntent(intent: Intent) {

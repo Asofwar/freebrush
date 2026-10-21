@@ -34,7 +34,7 @@ body:
     id: log
     attributes:
       label: Sync log
-      description: Copy the sync log from the Brush tab. It contains raw packets and no personal data apart from the brush's Bluetooth address.
+      description: Copy the sync log from the Brush tab. It contains raw packets, the brush's Bluetooth address and the date, time and score of the sessions stored on the brush, so look it over before posting.
       render: text
     validations:
       required: true

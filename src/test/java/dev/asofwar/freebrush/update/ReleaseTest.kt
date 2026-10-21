@@ -44,18 +44,19 @@ class ReleaseTest {
         assertEquals("v0.2.0", r.tag)
         assertEquals(4_200_000L, r.apkSize)
         assertTrue(r.apkUrl.endsWith("/FreeBrush-0.2.0.apk"))
-        assertTrue(r.sha256Url!!.endsWith("/FreeBrush-0.2.0.apk.sha256"))
+        assertTrue(r.sha256Url.endsWith("/FreeBrush-0.2.0.apk.sha256"))
         assertEquals("### Added\n- Updates", r.notes)
     }
 
     @Test
     fun skipsUnusableReleases() {
-        assertNull(ReleaseParser.parse(release("v0.2.0", asset("notes.txt"))))
-        assertNull(ReleaseParser.parse(release("latest", asset("FreeBrush.apk"))))
-        assertNull(ReleaseParser.parse(release("v0.2.0", asset("FreeBrush.apk"), extra = "\"prerelease\": true,")))
-        assertNull(ReleaseParser.parse(release("v0.2.0", asset("FreeBrush.apk").replace("https://", "http://"))))
-        // No checksum asset: still usable, just not verified beyond HTTPS and the APK signature.
-        assertNull(ReleaseParser.parse(release("v0.2.0", asset("FreeBrush.apk")))!!.sha256Url)
+        val sha = asset("FreeBrush.apk.sha256")
+        assertNull(ReleaseParser.parse(release("v0.2.0", asset("notes.txt"), sha)))
+        assertNull(ReleaseParser.parse(release("latest", asset("FreeBrush.apk"), sha)))
+        assertNull(ReleaseParser.parse(release("v0.2.0", asset("FreeBrush.apk"), sha, extra = "\"prerelease\": true,")))
+        assertNull(ReleaseParser.parse(release("v0.2.0", asset("FreeBrush.apk").replace("https://", "http://"), sha)))
+        // No checksum asset: not offered, the APK could not be checked.
+        assertNull(ReleaseParser.parse(release("v0.2.0", asset("FreeBrush.apk"))))
     }
 
     @Test

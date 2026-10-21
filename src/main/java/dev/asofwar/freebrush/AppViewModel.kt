@@ -1,6 +1,10 @@
 package dev.asofwar.freebrush
 
 import android.app.Application
+import androidx.core.content.ContextCompat
+import android.os.SystemClock
+import android.content.pm.PackageManager
+import android.Manifest
 import android.net.Uri
 import androidx.core.content.FileProvider
 import androidx.lifecycle.AndroidViewModel
@@ -22,7 +26,6 @@ import dev.asofwar.freebrush.data.toCsv
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -85,12 +88,14 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private val _action = MutableStateFlow<ActionState>(ActionState.Idle)
     val action: StateFlow<ActionState> = _action
 
-    /** The one Bluetooth job at a time: a sync or a write. The brush accepts a single connection. */
-    private var syncJob: Job? = null
+    /** Syncs and writes, one at a time: the brush accepts a single connection. */
+    private val queue = BluetoothQueue(viewModelScope)
 
-    /** Brush the Bluetooth job is talking to right now, and brushes whose sync waits in the queue. */
+    /** Brush the running Bluetooth job talks to now; a sync of several brushes moves through them. */
     private var busyBrush: String? = null
-    private val queued = mutableSetOf<String>()
+
+    /** When the app last synced by itself (elapsed realtime), so turning the phone does not start another. */
+    private var lastAutoSync = 0L
 
     private fun store(id: String): SessionStore = stores.getOrPut(id) {
         SessionStore(getApplication(), id).also { s -> viewModelScope.launch { s.load() } }
@@ -105,8 +110,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     /** Moves the brush on screen to the same person's new brush: history, name and level stay. */
     fun replace(device: FoundDevice) {
         val info = brush.value ?: return
-        // Only a job on this very brush stops; another person's sync finishes and this one queues behind it.
-        if (busyBrush == info.id) syncJob?.cancel()
+        // Only jobs on this very brush stop; another person's sync finishes and this one queues behind it.
+        queue.cancel(info.id, alsoRunning = busyBrush == info.id)
         prefs.update(info.id) { it.replacedBy(device.address, device.name) }
         _sync.value = SyncState.Idle
         syncNow()
@@ -116,7 +121,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         if (id == brush.value?.id) return
         prefs.select(id)
         // A sync of another brush keeps running and stays visible; otherwise the old result belongs to the old brush.
-        if (syncJob?.isActive != true) {
+        if (!queue.isBusy) {
             _sync.value = SyncState.Idle
             _log.value = emptyList()
         }
@@ -130,7 +135,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     /** Forgets the brush on screen together with its history on the phone. */
     fun remove() {
         val info = brush.value ?: return
-        if (busyBrush == info.id) syncJob?.cancel()
+        queue.cancel(info.id, alsoRunning = busyBrush == info.id)
         prefs.remove(info.id)
         _sync.value = SyncState.Idle
         _log.value = emptyList()
@@ -142,34 +147,40 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     /** Syncs the brush on screen, after whatever Bluetooth job is running; once, however often it is asked. */
     fun syncNow() {
         val info = brush.value ?: return
-        if (info.id in queued || (busyBrush == info.id && syncJob?.isActive == true)) return
-        queued += info.id
-        val previous = syncJob
-        syncJob = viewModelScope.launch {
-            try {
-                previous?.join()
-            } finally {
-                queued -= info.id
-            }
-            syncAll(listOf(info))
-        }
+        if (queue.has(info.id, BluetoothQueue.Kind.SYNC)) return
+        queue.enqueue(info.id, BluetoothQueue.Kind.SYNC) { syncAll(listOf(info.id)) }
     }
 
     /**
-     * The sync when the app opens. With several brushes it first listens for a few seconds which of them are awake
-     * and syncs those, the one on screen first; with one brush, or when none is heard, it tries the one on screen.
+     * The sync of the app coming to the foreground: on start and on return from the background, but not again within
+     * a couple of minutes, so turning the phone or changing the theme does not reconnect to the brush.
      */
-    fun syncOnOpen() {
+    fun onAppStart() {
+        val now = SystemClock.elapsedRealtime()
+        if (lastAutoSync != 0L && now - lastAutoSync < AUTO_SYNC_GAP_MS) return
+        if (brush.value == null || !bluetoothAllowed()) return
+        lastAutoSync = now
+        syncOnOpen()
+    }
+
+    private fun bluetoothAllowed(): Boolean = listOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT)
+        .all { ContextCompat.checkSelfPermission(getApplication(), it) == PackageManager.PERMISSION_GRANTED }
+
+    /**
+     * With several brushes, first listens for a few seconds which of them are awake and syncs those, the one on
+     * screen first; with one brush, or when none is heard, it tries the one on screen.
+     */
+    private fun syncOnOpen() {
         val all = brushes.value
         val shown = brush.value ?: return
         if (all.size < 2) return syncNow()
-        if (syncJob?.isActive == true) return
-        syncJob = viewModelScope.launch {
+        if (queue.has(null, BluetoothQueue.Kind.SYNC)) return
+        queue.enqueue(null, BluetoothQueue.Kind.SYNC) {
             _log.value = emptyList()
             _sync.value = SyncState.Running("Ищу проснувшиеся щётки…")
             val awake = awakeAddresses(all.map { it.address }.toSet())
             val targets = all.filter { it.address in awake }.sortedByDescending { it.id == shown.id }
-            syncAll(targets.ifEmpty { listOf(shown) })
+            syncAll(targets.ifEmpty { listOf(shown) }.map { it.id })
         }
     }
 
@@ -191,8 +202,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         return seen
     }
 
-    /** Syncs [targets] one after another; one brush failing does not stop the others. */
-    private suspend fun syncAll(targets: List<BrushInfo>) {
+    /** Syncs the brushes [ids] one after another; one brush failing does not stop the others. */
+    private suspend fun syncAll(ids: List<String>) {
         val named = brushes.value.size > 1
         val lines = mutableListOf<String>()
         _log.value = emptyList()
@@ -200,37 +211,46 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         var added = 0
         var synced = 0
         var failure: String? = null
-        for (target in targets) {
-            val info = prefs.get(target.id) ?: continue
-            val prefix = if (named) "${info.title}: " else ""
-            busyBrush = info.id
-            try {
-                added += syncOne(info, prefix, lines)
-                synced++
-            } catch (e: CancellationException) {
-                busyBrush = null
-                throw e
-            } catch (e: Exception) {
-                lines += prefix + "Ошибка: ${e.message}"
-                _log.value = lines.toList()
-                failure = prefix + (e.message ?: e.javaClass.simpleName)
+        try {
+            for (id in ids) {
+                // Re-read: the brush may have been removed or replaced while this job waited.
+                val info = prefs.get(id) ?: continue
+                val prefix = if (named) "${info.title}: " else ""
+                busyBrush = info.id
+                try {
+                    added += syncOne(info, prefix, lines)
+                    synced++
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    lines += prefix + "Ошибка: ${e.message}"
+                    _log.value = lines.toList()
+                    failure = prefix + (e.message ?: e.javaClass.simpleName)
+                }
             }
+            _sync.value = if (synced == 0 && failure != null) SyncState.Failed(failure) else SyncState.Done(added)
+        } catch (e: CancellationException) {
+            // Stopped because its brush was removed or replaced: nothing runs any more.
+            if (_sync.value is SyncState.Running) _sync.value = SyncState.Idle
+            throw e
+        } finally {
+            busyBrush = null
         }
-        busyBrush = null
-        _sync.value = if (synced == 0 && failure != null) SyncState.Failed(failure) else SyncState.Done(added)
     }
 
     private suspend fun syncOne(info: BrushInfo, prefix: String, lines: MutableList<String>): Int {
         val result = client.sync(
             info.address,
             info.growthTotal,
-            onGrowth = { total -> prefs.update(info.id) { it.copy(growthTotal = total) } },
+            onGrowth = { total -> prefs.update(info.id, durable = true) { it.copy(growthTotal = total) } },
         ) { step ->
             lines += prefix + step
             _log.value = lines.toList()
             // Raw packet lines go to the log only.
             if (!step.startsWith("←") && !step.startsWith("→")) _sync.value = SyncState.Running(prefix + step)
         }
+        // The brush was removed or moved to another device meanwhile: what came from the old one is not its data.
+        if (prefs.get(info.id)?.address != info.address) return 0
         val added = store(info.id).addAll(result.sessions)
         prefs.update(info.id) {
             it.copy(
@@ -249,10 +269,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         return added
     }
 
-    /** Stores what brush [id] reported about its settings and brush head. */
-    private fun saveSettings(id: String, settings: OcleanProtocol.Settings?) {
+    /** Stores what brush [info] reported about its settings and brush head, if the record still points at it. */
+    private fun saveSettings(info: BrushInfo, settings: OcleanProtocol.Settings?) {
         settings ?: return
-        prefs.update(id) {
+        if (prefs.get(info.id)?.address != info.address) return
+        prefs.update(info.id) {
             it.copy(
                 headDays = settings.headUsedDays,
                 headUses = settings.headUsedTimes,
@@ -270,9 +291,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private fun onBrush(start: String, block: suspend (info: BrushInfo, onStep: (String) -> Unit) -> String) {
         val info = brush.value ?: return
         // Queue behind a running sync instead of refusing: the brush takes one connection at a time.
-        val previous = syncJob
-        syncJob = viewModelScope.launch {
-            previous?.join()
+        _action.value = ActionState.Running(if (queue.isBusy) "$start Жду щётку…" else start)
+        queue.enqueue(info.id, BluetoothQueue.Kind.WRITE) {
             val lines = mutableListOf<String>()
             _log.value = lines.toList()
             _action.value = ActionState.Running(start)
@@ -301,7 +321,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     /** Writes settings commands and stores what the brush read back. */
     fun applySettings(commands: List<Pair<ByteArray, String>>, done: String) = onBrush("Записываю на щётку…") { info, onStep ->
         val result = client.apply(info.address, commands, onStep)
-        saveSettings(info.id, result.settings)
+        saveSettings(info, result.settings)
         if (result.confirmed == result.total) done else "Щётка подтвердила ${result.confirmed} из ${result.total}"
     }
 
@@ -314,7 +334,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 if (!send(packet, "Программа, пакет ${i + 1} из ${packets.size}")) { ok = false; break }
             }
             val settings = settings()
-            saveSettings(info.id, settings)
+            saveSettings(info, settings)
             val active = settings?.raw?.let { it[BrushControls.SCHEME_INDEX].toInt() and 0xFF }
             android.util.Log.i("FreeBrushProbe", "programme $pNum ${steps.joinToString { "${it.gear}x${it.seconds}" }} ok=$ok active=$active settings=${settings?.raw?.toHex()}")
             when {
@@ -370,7 +390,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 report("HEAD_LIMIT 0217 было=$limit ack=$ack меняется=$changed возвращено=$restored")
             }
             val end = settings()
-            saveSettings(info.id, end)
+            saveSettings(info, end)
             report("итоговые настройки ${end?.raw?.toHex()}")
             "Проверка закончена: работает $works настроек, подробности в журнале"
         }
@@ -406,13 +426,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     /** Debug: sets the stored growth total, e.g. to the points the brush really had before an experiment. */
     fun setGrowthTotal(total: Int) {
         val info = brush.value ?: return
-        prefs.update(info.id) { it.copy(growthTotal = total) }
+        prefs.update(info.id, durable = true) { it.copy(growthTotal = total) }
     }
 
     /** Debug: writes raw hex commands one by one and reads the settings back; replies go to the log. */
     fun sendRaw(commands: List<String>) = onBrush("Отправка команд…") { info, onStep ->
         val result = client.apply(info.address, commands.map { hex(it) to "→ $it" }, onStep)
-        saveSettings(info.id, result.settings)
+        saveSettings(info, result.settings)
         android.util.Log.i("FreeBrushProbe", "raw ${commands.joinToString()} confirmed=${result.confirmed}/${result.total} settings=${result.settings?.raw?.toHex()}")
         "Подтверждено ${result.confirmed} из ${result.total}"
     }
@@ -433,5 +453,6 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     private companion object {
         const val SCAN_MS = 4_000L
+        const val AUTO_SYNC_GAP_MS = 2 * 60_000L
     }
 }

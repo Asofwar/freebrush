@@ -17,7 +17,8 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
+import dev.asofwar.freebrush.BuildConfig
 import java.util.UUID
 
 class GattException(message: String) : Exception(message)
@@ -51,7 +52,7 @@ class GattSession(private val context: Context, private val device: BluetoothDev
 
     private val callback = object : BluetoothGattCallback() {
         override fun onConnectionStateChange(g: BluetoothGatt, status: Int, newState: Int) {
-            Log.d(TAG, "connection state=$newState status=$status")
+            if (BuildConfig.DEBUG) Log.d(TAG, "connection state=$newState status=$status")
             if (newState == BluetoothProfile.STATE_CONNECTED && status == BluetoothGatt.GATT_SUCCESS) {
                 isConnected = true
                 connected.complete(Unit)
@@ -118,7 +119,8 @@ class GattSession(private val context: Context, private val device: BluetoothDev
     }
 
     private fun emit(uuid: UUID, value: ByteArray) {
-        Log.d(TAG, "notify ${uuid.short()} ${value.toHex()}")
+        // Packets reveal brushing times: logcat gets them in debug builds only.
+        if (BuildConfig.DEBUG) Log.d(TAG, "notify ${uuid.short()} ${value.toHex()}")
         _notifications.tryEmit(Notification(uuid, value))
     }
 
@@ -128,10 +130,14 @@ class GattSession(private val context: Context, private val device: BluetoothDev
         else op.completeExceptionally(GattException("GATT status $status"))
     }
 
+    /**
+     * A timeout is a [GattException], never a cancellation: kotlinx `withTimeout` throws a CancellationException,
+     * which callers would take for the user cancelling and silently drop the sync.
+     */
     suspend fun connect(timeoutMs: Long = 15_000) {
         connected = CompletableDeferred()
         gatt = device.connectGatt(context, false, callback, BluetoothDevice.TRANSPORT_LE)
-        withTimeout(timeoutMs) { connected.await() }
+        withTimeoutOrNull(timeoutMs) { connected.await() } ?: throw GattException("Щётка не ответила на подключение")
     }
 
     private suspend fun <T> op(name: String, timeoutMs: Long = 5_000, start: (BluetoothGatt) -> Boolean): T =
@@ -141,8 +147,11 @@ class GattSession(private val context: Context, private val device: BluetoothDev
             pending = deferred
             try {
                 if (!start(g)) throw GattException("$name: операция не запущена")
+                var result: Any? = null
+                withTimeoutOrNull(timeoutMs) { result = deferred.await() }
+                    ?: throw GattException("$name: щётка не ответила")
                 @Suppress("UNCHECKED_CAST")
-                withTimeout(timeoutMs) { deferred.await() } as T
+                result as T
             } finally {
                 pending = null
             }
@@ -174,7 +183,7 @@ class GattSession(private val context: Context, private val device: BluetoothDev
         } else {
             BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
         }
-        Log.d(TAG, "write ${uuid.short()} ${value.toHex()}")
+        if (BuildConfig.DEBUG) Log.d(TAG, "write ${uuid.short()} ${value.toHex()}")
         op<Unit>("write ${uuid.short()}") { g ->
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 g.writeCharacteristic(c, value, type) == BluetoothStatusCodes.SUCCESS
