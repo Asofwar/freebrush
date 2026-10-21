@@ -1,14 +1,12 @@
 package dev.asofwar.freebrush.ui.jaw
 
-import android.graphics.Canvas as AndroidCanvas
-import android.graphics.Paint
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FloatExponentialDecaySpec
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDecay
 import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.FloatExponentialDecaySpec
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
@@ -22,8 +20,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.awaitHorizontalTouchSlopOrCancellation
-import androidx.compose.foundation.gestures.drag
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.drag
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -35,6 +33,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -44,19 +43,21 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.lerp
-import androidx.compose.ui.graphics.nativeCanvas
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
@@ -64,6 +65,7 @@ import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
 import dev.asofwar.freebrush.data.BrushSession
 import dev.asofwar.freebrush.data.Zones
 import dev.asofwar.freebrush.data.zoneSeconds
@@ -71,23 +73,31 @@ import dev.asofwar.freebrush.ui.MIN_ZONE_SEC
 import dev.asofwar.freebrush.ui.ScoreAmber
 import dev.asofwar.freebrush.ui.ScoreGreen
 import dev.asofwar.freebrush.ui.ScoreRed
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.time.LocalDate
 import kotlin.math.PI
 import kotlin.math.sin
 
-private const val DEFAULT_PITCH = 0.22f
+private const val DEFAULT_PITCH = 0.30f
 
-/** "Л" beside the patient's left molars (+x), "П" beside the right ones. */
-private val SIDE_LABELS = listOf("Л" to 3.75f, "П" to -3.75f)
+/** How strongly zone colours tint the natural enamel when no zone is selected. */
+private const val ZONE_TINT = 0.62f
 
 /** Seconds per zone the app aims for: two minutes spread over eight zones. */
 private const val GOAL_ZONE_SEC = 15
 
+/** The mesh has tens of thousands of vertices: build it once per process, off the main thread. */
+private object JawCache {
+    val mesh: JawMesh by lazy { JawModel.build() }
+    val camera: JawCamera by lazy { JawCamera(mesh) }
+}
+
 /**
- * Interactive 3D model of both jaws coloured by brushing time per zone. Drag to rotate (with inertia),
- * tap a tooth surface to select its zone and see its numbers, double-tap to reset the view.
+ * Interactive 3D model of both jaws, rendered on the GPU, tinted by brushing time per zone. Drag sideways to
+ * rotate (with inertia), tap a tooth surface to select its zone and see its numbers, double-tap to reset.
  * Until touched, the model sways gently.
  */
 @Composable
@@ -95,19 +105,8 @@ fun Jaw3D(session: BrushSession, history: List<BrushSession>, modifier: Modifier
     val seconds = session.zoneSeconds()
     if (seconds.size < 8) return
 
-    val mesh = remember { JawModel.build() }
-    val renderer = remember(mesh) { JawRenderer(mesh) }
-    val paint = remember { Paint().apply { isAntiAlias = true } }
-    val density = androidx.compose.ui.platform.LocalDensity.current
-    val labelColor = MaterialTheme.colorScheme.onSurfaceVariant.toArgb()
-    val labelPaint = remember(labelColor) {
-        Paint().apply {
-            isAntiAlias = true
-            color = labelColor
-            textAlign = Paint.Align.CENTER
-            textSize = with(density) { 15.dp.toPx() }
-            isFakeBoldText = true
-        }
+    val mesh by produceState<JawMesh?>(null) {
+        value = withContext(Dispatchers.Default) { JawCache.camera; JawCache.mesh }
     }
     val scope = rememberCoroutineScope()
     val haptics = LocalHapticFeedback.current
@@ -117,7 +116,9 @@ fun Jaw3D(session: BrushSession, history: List<BrushSession>, modifier: Modifier
     var selected by remember(session.key) { mutableIntStateOf(-1) }
     var touched by remember { mutableStateOf(false) }
     var fling by remember { mutableStateOf<Job?>(null) }
-    val entrance = remember(session.key) { Animatable(0.6f) }
+    var view by remember { mutableStateOf<JawGlView?>(null) }
+    val entrance = remember(session.key) { Animatable(0.7f) }
+    val colors by rememberUpdatedState(zoneColors(seconds))
 
     LaunchedEffect(session.key) {
         entrance.animateTo(1f, spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow))
@@ -127,32 +128,50 @@ fun Jaw3D(session: BrushSession, history: List<BrushSession>, modifier: Modifier
         if (touched) return@LaunchedEffect
         val start = withFrameNanos { it }
         while (true) {
-            withFrameNanos { now ->
-                val t = (now - start) / 1e9f
-                yaw = sin(t * 0.7f) * 0.55f
-            }
+            withFrameNanos { now -> yaw = sin((now - start) / 1e9f * 0.6f) * 0.5f }
         }
     }
     val pulse = rememberInfiniteTransition(label = "glow")
-    val glow by pulse.animateFloat(0f, 1f, infiniteRepeatable(tween(800), RepeatMode.Reverse), label = "glow")
+    val glow by pulse.animateFloat(0f, 1f, infiniteRepeatable(tween(850), RepeatMode.Reverse), label = "glow")
 
-    val zoneColors = zoneColors(seconds)
-    val gum = lerp(Color(0xFFE7A1A6), MaterialTheme.colorScheme.surface, 0.12f).toArgb()
+    // Push every visible change to the GL thread; nothing is drawn while the model is still.
+    LaunchedEffect(view) {
+        val v = view ?: return@LaunchedEffect
+        snapshotFlow {
+            JawGlView.Frame(yaw, pitch, entrance.value, colors, selected, if (selected >= 0) glow else 0f, ZONE_TINT)
+        }.collect { v.submit(it) }
+    }
 
     Column(modifier) {
-        Box {
-            Canvas(
+        Box(Modifier.fillMaxWidth().height(290.dp)) {
+            // Soft contact shadow under the model.
+            Canvas(Modifier.matchParentSize()) {
+                val c = Offset(size.width / 2, size.height * 0.9f)
+                val r = size.width * 0.30f
+                scale(1f, 0.16f, pivot = c) {
+                    drawCircle(Brush.radialGradient(listOf(Color.Black.copy(alpha = 0.28f), Color.Transparent), c, r), r, c)
+                }
+            }
+            val m = mesh
+            if (m == null) {
+                CircularProgressIndicator(Modifier.align(Alignment.Center).size(28.dp), strokeWidth = 2.dp)
+            } else {
+                AndroidView(
+                    factory = { ctx -> JawGlView(ctx, m).also { view = it } },
+                    modifier = Modifier.matchParentSize(),
+                )
+            }
+            // Gesture layer on top of the GL view.
+            Box(
                 Modifier
-                    .fillMaxWidth()
-                    .height(270.dp)
-                    .clipToBounds()
+                    .matchParentSize()
                     .pointerInput(session.key) {
                         detectTapGestures(
                             onTap = { o ->
                                 touched = true
-                                val z = renderer.hitTest(o.x, o.y)
-                                selected = if (z >= 0 && z != selected) z else -1
-                                if (z >= 0) haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                val z = JawCache.camera.pick(o.x, o.y, size.width.toFloat(), size.height.toFloat(), yaw, pitch, entrance.value)
+                                selected = if (z != null && z >= 0 && z != selected) z else -1
+                                if (z != null && z >= 0) haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                             },
                             onDoubleTap = {
                                 touched = true
@@ -162,7 +181,7 @@ fun Jaw3D(session: BrushSession, history: List<BrushSession>, modifier: Modifier
                                     val y0 = yaw
                                     val p0 = pitch
                                     val target = Math.round(y0 / (2 * PI)).toFloat() * (2 * PI).toFloat()
-                                    Animatable(0f).animateTo(1f, tween(450)) {
+                                    Animatable(0f).animateTo(1f, tween(500)) {
                                         yaw = y0 + (target - y0) * value
                                         pitch = p0 + (DEFAULT_PITCH - p0) * value
                                     }
@@ -196,53 +215,28 @@ fun Jaw3D(session: BrushSession, history: List<BrushSession>, modifier: Modifier
                             }
                         }
                     },
-            ) {
-                renderer.render(
-                    width = size.width,
-                    height = size.height,
-                    yaw = yaw,
-                    pitch = pitch,
-                    scale = entrance.value,
-                    zoneColors = zoneColors,
-                    gumColor = gum,
-                    selected = selected,
-                    glow = if (selected >= 0) glow else 0f,
-                )
-                drawIntoCanvas { c ->
-                    c.nativeCanvas.drawVertices(
-                        AndroidCanvas.VertexMode.TRIANGLES,
-                        renderer.triangleCount * 6,
-                        renderer.verts, 0,
-                        null, 0,
-                        renderer.colors, 0,
-                        null, 0, 0,
-                        paint,
-                    )
-                    // Side labels follow the model: the patient's left is +x.
-                    for ((label, x) in SIDE_LABELS) {
-                        val (px, py, depth) = renderer.project(x, 0f, 0.4f)
-                        labelPaint.alpha = (255 * (0.35f + 0.65f * depth)).toInt().coerceIn(0, 255)
-                        c.nativeCanvas.drawText(label, px, py + labelPaint.textSize / 3, labelPaint)
-                    }
-                }
-            }
+            )
         }
         Spacer(Modifier.height(10.dp))
         ZonePanel(selected, seconds, history)
     }
 }
 
-/** Zone colours: teal from dim to bright by time, amber when under [MIN_ZONE_SEC]; mixed into enamel white. */
+/** Zone colours as sRGB triples: teal brighter with more time, amber under [MIN_ZONE_SEC]. */
 @Composable
-private fun zoneColors(seconds: List<Int>): IntArray {
+private fun zoneColors(seconds: List<Int>): FloatArray {
     val max = seconds.max().coerceAtLeast(1)
-    val bright = MaterialTheme.colorScheme.primary
-    val enamel = Color(0xFFF3F0E8)
-    return IntArray(8) { i ->
+    // Fixed colours rather than theme ones: they tint enamel and must read the same in light and dark mode.
+    val light = Color(0xFF9FEBDD)
+    val deep = Color(0xFF14B8A6)
+    val missed = Color(0xFFFF8A3D)
+    val out = FloatArray(24)
+    for (i in 0 until 8) {
         val s = seconds[i]
-        val tint = if (s < MIN_ZONE_SEC) ScoreAmber else lerp(enamel, bright, 0.35f + 0.65f * s / max)
-        lerp(enamel, tint, 0.85f).toArgb()
+        val c = if (s < MIN_ZONE_SEC) missed else lerp(light, deep, s.toFloat() / max)
+        out[i * 3] = c.red; out[i * 3 + 1] = c.green; out[i * 3 + 2] = c.blue
     }
+    return out
 }
 
 @Composable
@@ -262,7 +256,7 @@ private fun ZonePanel(selected: Int, seconds: List<Int>, history: List<BrushSess
                 )
                 Spacer(Modifier.height(6.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(10.dp).clip(CircleShape).background(ScoreAmber))
+                    Box(Modifier.size(10.dp).clip(CircleShape).background(Color(0xFFFF8A3D)))
                     Text(
                         "  меньше $MIN_ZONE_SEC с · меньше всего: ${Zones.ALL[weakest].lowercase()}, ${seconds[weakest]} с",
                         style = MaterialTheme.typography.labelSmall,

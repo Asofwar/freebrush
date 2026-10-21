@@ -18,6 +18,9 @@ All notable changes to this project are documented here. The format follows
   a top-down map of both jaws with per-zone time, growing day bars, staggered card entrance, animated tab
   switching, session details in a bottom sheet, brush-head wear gauge with a replacement hint, radar animation
   while scanning, welcome screen with rising bubbles, haptic feedback when new sessions arrive.
-- Interactive 3D model of both jaws (28 teeth and gums, software-rendered, no 3D library): surfaces are coloured
-  by brushing time per zone; drag sideways to rotate with inertia, tap a tooth to see its zone's seconds, share
-  of the session and weekly average, double-tap to reset.
+- Interactive 3D model of both jaws, rendered with OpenGL ES 3 (no 3D library): procedurally built anatomical
+  crowns (shovel incisors, pointed canines, cusped premolars and molars with fissures), scalloped gums with
+  papillae and root bulges, smooth per-pixel lighting with glossy enamel, translucent incisal edges, wet gums,
+  ambient occlusion and 4x MSAA. Zones tint the enamel mint (brushed) or orange (missed); drag sideways to rotate
+  with inertia, tap a tooth to see its zone's seconds, share of the session and weekly average, double-tap to
+  reset.
