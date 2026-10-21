@@ -38,7 +38,7 @@ class MainActivity : ComponentActivity() {
      * Debug builds only, driven over adb (`am start -S -n dev.asofwar.freebrush/.MainActivity --es token <t> --es ...`,
      * `<t>` = `freebrush.debugToken` from local.properties; without it any app could send these to the exported activity):
      * `probe settings` runs the settings probe; `send 020900,030201` writes raw commands and logs the replies;
-     * `update check` checks GitHub for a release now.
+     * `update check` checks GitHub for a release now; `fakesession 1` adds a session that just ended (guided mode check).
      */
     private fun handleDebugIntent(intent: Intent?) {
         if (!BuildConfig.DEBUG || intent == null) return
@@ -47,6 +47,7 @@ class MainActivity : ComponentActivity() {
         intent.getStringExtra("send")?.let { list -> vm.sendRaw(list.split(',').map { it.trim() }.filter { it.isNotEmpty() }) }
         intent.getStringExtra("growth")?.toIntOrNull()?.let { vm.setGrowthTotal(it) }
         if (intent.getStringExtra("update") == "check") Updater.get(this).check()
+        if (intent.getStringExtra("fakesession") != null) vm.addFakeSession()
         // `fakebrush Аня` adds a brush record with no device behind it, to try the switcher with one real brush.
         intent.getStringExtra("fakebrush")?.let { vm.addFakeBrush(it) }
         // `prog 231|2:30,16:30` sends programme 231 with gear:seconds steps.

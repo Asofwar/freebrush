@@ -129,6 +129,8 @@ fun FreeBrushApp(vm: AppViewModel) {
 private fun MainScreen(vm: AppViewModel, brush: BrushInfo, brushes: List<BrushInfo>, onPair: (PairMode) -> Unit) {
     var tab by rememberSaveable { mutableStateOf(Tab.Today) }
     var open by remember { mutableStateOf<BrushSession?>(null) }
+    // Guided brushing opens over the tabs.
+    var guiding by rememberSaveable { mutableStateOf(false) }
     val sessions by vm.sessions.collectAsStateWithLifecycle()
     val custom by vm.customProgrammes.collectAsStateWithLifecycle()
     val sync by vm.sync.collectAsStateWithLifecycle()
@@ -198,7 +200,7 @@ private fun MainScreen(vm: AppViewModel, brush: BrushInfo, brushes: List<BrushIn
                     label = "tabs",
                 ) { t ->
                     when (t) {
-                        Tab.Today -> TodayScreen(sessions, sync, brush, vm::syncNow) { open = it }
+                        Tab.Today -> TodayScreen(sessions, sync, brush, vm::syncNow, onGuide = { guiding = true }) { open = it }
                         Tab.History -> HistoryScreen(sessions, custom) { open = it }
                         Tab.Brush -> BrushScreen(vm, brush, sync, onPair)
                     }
@@ -207,4 +209,7 @@ private fun MainScreen(vm: AppViewModel, brush: BrushInfo, brushes: List<BrushIn
         }
     }
     open?.let { s -> SessionSheet(s, sessions, custom) { open = null } }
+    if (guiding) {
+        BrushingScreen(brush, sessions, custom, sync, onSync = vm::syncNow, onClose = { guiding = false })
+    }
 }

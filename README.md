@@ -32,6 +32,7 @@ that is needed. FreeBrush reads the data straight from the brush and keeps it on
 | Streaks, two-week chart, daily goal | ✅ | partly |
 | 3D jaw model you can rotate and tap for per-zone stats | ✅ | flat diagram |
 | Several people's brushes on one phone, each with its own name, history and level | ✅ | family accounts in the cloud |
+| Guided brushing: zone by zone on the 3D jaw, extra time for zones you skip, plan vs the brush's record | ✅ | — |
 | Export to CSV | ✅ | ❌ |
 | Brush settings: zone reminder, raise-to-wake, day/evening mode, side-motion warning, display language, brush-head reset and limit | ✅ | ✅ |
 | Settings the official app hides on this brush: pressure alert, brush pause, wake-up mode | ✅ | ❌ |
@@ -155,6 +156,8 @@ FreeBrush — открытое Android-приложение для умных щ
 - Уровень роста на экране щётки растёт по настоящим чисткам.
 - Несколько щёток на одном телефоне, по одной на человека: у каждой своё имя, история, статистика и уровень,
   переключаются чипами сверху. «Заменить на новую щётку» переносит историю и уровень человека на его новую щётку.
+- Чистка с подсказками: 3D-челюсть ведёт по зонам с отсчётом, вибрацией, звуком и голосом, слабым зонам даёт
+  больше времени, а после чистки сравнивает план с тем, что записала щётка.
 - Обновляется сама: APK берётся из [релизов](../../releases/latest) на GitHub.
 
 **Чего не будет:** обновления прошивки (файлы лежат на серверах Oclean), семейные аккаунты, «экспертные»

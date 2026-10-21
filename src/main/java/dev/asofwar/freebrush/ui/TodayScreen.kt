@@ -23,6 +23,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -50,6 +51,7 @@ fun TodayScreen(
     sync: SyncState,
     brush: BrushInfo,
     onSync: () -> Unit,
+    onGuide: () -> Unit,
     onOpen: (BrushSession) -> Unit,
 ) {
     val today = LocalDate.now()
@@ -69,6 +71,12 @@ fun TodayScreen(
         Box(Modifier.staggeredEntrance(1)) { SyncChip(sync, brush, onSync) }
 
         HeroCard(last, todays, Modifier.staggeredEntrance(2), onOpen)
+
+        FilledTonalButton(onClick = onGuide, modifier = Modifier.fillMaxWidth().height(52.dp).staggeredEntrance(2)) {
+            Icon(Icons.Brush, null, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(10.dp))
+            Text("Чистить с подсказками")
+        }
 
         Row(Modifier.staggeredEntrance(3), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             val streak = sessions.streakDays()

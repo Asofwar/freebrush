@@ -423,6 +423,16 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         current?.let { prefs.select(it.id) }
     }
 
+    /** Debug: a session that just ended on the brush on screen, to try the guided mode's comparison without a brush. */
+    fun addFakeSession() {
+        val info = brush.value ?: return
+        val now = System.currentTimeMillis() / 1000
+        val zones = listOf(14, 9, 16, 12, 15, 18, 11, 7)
+        viewModelScope.launch {
+            store(info.id).addAll(listOf(BrushSession(epochSec = now - 60, durationSec = zones.sum(), plannedSec = 120, score = 74, zones = zones)))
+        }
+    }
+
     /** Debug: sets the stored growth total, e.g. to the points the brush really had before an experiment. */
     fun setGrowthTotal(total: Int) {
         val info = brush.value ?: return

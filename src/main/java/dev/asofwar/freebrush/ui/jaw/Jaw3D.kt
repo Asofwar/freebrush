@@ -391,3 +391,101 @@ private fun Metric(value: String, caption: String) {
         Text(caption, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
+
+/** Guide colours: the zone to brush now, zones already brushed, zones still ahead. */
+private val GUIDE_NOW = Color(0xFF4FE0CB)
+private val GUIDE_DONE = Color(0xFF34D399)
+private val GUIDE_AHEAD = Color(0xFF8A9593)
+
+/**
+ * The jaw for guided brushing. Whenever [zone] changes it turns to present that zone and lights it; zones already
+ * brushed glow by how much of their time is done ([progress], 0..1 per zone in [Zones.ALL] order), zones ahead stay
+ * dim. No gestures: the hands are busy. Frames are drawn only when the zone or the progress changes.
+ */
+@Composable
+fun GuideJaw3D(zone: Int, progress: List<Float>, modifier: Modifier = Modifier) {
+    val context = LocalContext.current.applicationContext
+    val baked by produceState<Pair<BakedJaw, JawCamera>?>(null) {
+        value = withContext(Dispatchers.IO) { JawCache.get(context) }
+    }
+    val dark = isSystemInDarkTheme()
+    var yaw by remember { mutableFloatStateOf(REST_YAW) }
+    var pitch by remember { mutableFloatStateOf(DEFAULT_PITCH) }
+    var visible by remember { mutableStateOf(true) }
+    var view by remember { mutableStateOf<JawGlView?>(null) }
+    val glow = remember { Animatable(0f) }
+    val rings by rememberUpdatedState(guideRings(zone, progress))
+
+    // Each new zone: a short flash of light, and the model turns to show it.
+    LaunchedEffect(zone) {
+        if (zone !in 0..7) return@LaunchedEffect
+        launch {
+            glow.snapTo(0f)
+            glow.animateTo(1f, tween(320))
+            glow.animateTo(0.7f, tween(900))
+        }
+        val (targetYaw, targetPitch) = ZONE_VIEWS[zone]
+        val turn = (2 * PI).toFloat()
+        var dy = (targetYaw - yaw) % turn
+        if (dy > PI) dy -= turn
+        if (dy < -PI) dy += turn
+        val y0 = yaw
+        val p0 = pitch
+        Animatable(0f).animateTo(1f, spring(dampingRatio = 0.9f, stiffness = 60f)) {
+            yaw = y0 + dy * value
+            pitch = p0 + (targetPitch - p0) * value
+        }
+    }
+    LaunchedEffect(view) {
+        val v = view ?: return@LaunchedEffect
+        snapshotFlow { if (!visible) null else JawGlView.Frame(yaw, pitch, 1f, rings, zone, glow.value) }
+            .collect { frame -> frame?.let(v::submit) }
+    }
+
+    Box(
+        modifier
+            .fillMaxWidth()
+            .height(300.dp)
+            .onGloballyPositioned { visible = !it.boundsInWindow().isEmpty }
+            .clip(RoundedCornerShape(26.dp))
+            .background(
+                Brush.radialGradient(
+                    if (dark) listOf(Color(0xFF2E3837), Color(0xFF0A0F0E)) else listOf(Color.White, Color(0xFFDDE5E3)),
+                    center = Offset.Unspecified,
+                    radius = 900f,
+                ),
+            )
+            .semantics { contentDescription = "3D-модель зубов, сейчас: ${Zones.ALL.getOrElse(zone) { "—" }.lowercase()}" },
+    ) {
+        val b = baked
+        if (b == null) {
+            CircularProgressIndicator(Modifier.align(Alignment.Center).size(28.dp), strokeWidth = 2.dp)
+        } else {
+            AndroidView(
+                factory = { ctx -> JawGlView(ctx, b.first, b.second).also { view = it } },
+                modifier = Modifier.matchParentSize(),
+            )
+        }
+    }
+}
+
+private fun guideRings(zone: Int, progress: List<Float>): FloatArray {
+    val out = FloatArray(32)
+    for (i in 0 until 8) {
+        val p = progress.getOrElse(i) { 0f }.coerceIn(0f, 1f)
+        val c = when {
+            i == zone -> GUIDE_NOW
+            p > 0f -> GUIDE_DONE
+            else -> GUIDE_AHEAD
+        }
+        out[i * 4] = c.red
+        out[i * 4 + 1] = c.green
+        out[i * 4 + 2] = c.blue
+        out[i * 4 + 3] = when {
+            i == zone -> 0.6f + 0.4f * p
+            p > 0f -> 0.35f + 0.5f * p
+            else -> 0.12f
+        }
+    }
+    return out
+}

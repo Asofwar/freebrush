@@ -6,6 +6,14 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Guided brushing: "Чистить с подсказками" on the Today screen. The brush sends nothing while it runs, so the phone
+  keeps the time: the length of the programme the brush is set to, split over the eight zones in one continuous path,
+  with up to half again as much time for zones the recent sessions left short. The 3D jaw turns to each zone and
+  lights it, with a countdown, the next zone, pause, a buzz and a beep at every change and, if wanted, the zone
+  spoken aloud. Afterwards the app fetches the real record from the brush and shows the plan next to it, zone by zone.
+
 ## [0.2.1] - 2026-10-21
 
 ### Fixed
