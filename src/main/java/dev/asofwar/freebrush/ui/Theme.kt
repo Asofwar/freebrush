@@ -9,6 +9,7 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -110,6 +111,13 @@ fun FreeBrushTheme(content: @Composable () -> Unit) {
 val ScoreRed = Color(0xFFE5574F)
 val ScoreAmber = Color(0xFFF0A93B)
 val ScoreGreen = Color(0xFF2FB37C)
+
+/**
+ * A status colour dark enough to read as text on the light theme's surfaces (4.5:1 or better); unchanged in the
+ * dark theme, where the bright tones already read well.
+ */
+@Composable
+fun readable(c: Color): Color = if (isSystemInDarkTheme()) c else lerp(c, Color.Black, 0.45f)
 
 /** Score colour: red below 60, amber below 80, green from 80. */
 fun scoreColor(score: Int?): Color = when {

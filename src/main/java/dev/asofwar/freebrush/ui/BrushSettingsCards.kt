@@ -22,6 +22,8 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.semantics.Role
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -42,7 +44,7 @@ fun ActionLine(action: ActionState) {
     val (text, color) = when (action) {
         ActionState.Idle -> return
         is ActionState.Running -> action.text to MaterialTheme.colorScheme.primary
-        is ActionState.Done -> action.text to ScoreGreen
+        is ActionState.Done -> action.text to readable(ScoreGreen)
         is ActionState.Failed -> "Не получилось: ${action.text}" to MaterialTheme.colorScheme.error
     }
     Text(text, style = MaterialTheme.typography.labelLarge, color = color)
@@ -61,7 +63,9 @@ fun SettingsCard(settings: ByteArray?, busy: Boolean, onToggle: (Toggle, Boolean
         for (t in Toggle.entries.filter { it != Toggle.AUTO_MODE }) {
             val on = t.isOn(settings)
             Row(
-                Modifier.fillMaxWidth().clickable(enabled = !busy) { onToggle(t, !on) }.padding(vertical = 10.dp),
+                Modifier.fillMaxWidth()
+                    .toggleable(value = on, enabled = !busy, role = Role.Switch) { onToggle(t, it) }
+                    .padding(vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(Modifier.weight(1f)) {
@@ -77,7 +81,7 @@ fun SettingsCard(settings: ByteArray?, busy: Boolean, onToggle: (Toggle, Boolean
                     Text(t.description.substringBefore(". Скрыто"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 Spacer(Modifier.width(12.dp))
-                Switch(checked = on, onCheckedChange = { onToggle(t, it) }, enabled = !busy)
+                Switch(checked = on, onCheckedChange = null, enabled = !busy)
             }
         }
         val lang = settings[BrushControls.LANGUAGE_INDEX].toInt() and 0xFF
@@ -116,9 +120,11 @@ fun SettingsCard(settings: ByteArray?, busy: Boolean, onToggle: (Toggle, Boolean
 fun HeadActions(limit: Int?, busy: Boolean, onReset: () -> Unit, onLimit: (Int) -> Unit) {
     var confirm by remember { mutableStateOf(false) }
     var pick by remember { mutableStateOf(false) }
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 14.dp)) {
-        Button(onClick = { confirm = true }, enabled = !busy) { Text("Я поменял насадку") }
-        OutlinedButton(onClick = { pick = true }, enabled = !busy && limit != null) { Text("Ресурс: ${limit ?: "—"}") }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 14.dp).fillMaxWidth()) {
+        Button(onClick = { confirm = true }, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("Я поменял насадку") }
+        OutlinedButton(onClick = { pick = true }, enabled = !busy && limit != null, modifier = Modifier.fillMaxWidth()) {
+            Text("Ресурс: ${limit ?: "—"}")
+        }
     }
     if (confirm) {
         AlertDialog(

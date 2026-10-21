@@ -1,6 +1,8 @@
 package dev.asofwar.freebrush.ui
 
 import android.content.Intent
+import android.content.ClipboardManager
+import android.content.ClipData
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.clickable
@@ -24,6 +26,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -196,9 +199,23 @@ private fun SyncLog(log: List<String>, modifier: Modifier) {
             Icon(Icons.Chevron, null, modifier = Modifier.size(22.dp).rotate(turn))
         }
         AnimatedVisibility(open) {
+            val context = LocalContext.current
+            val text = log.joinToString("\n")
             Column {
                 HorizontalDivider(Modifier.padding(vertical = 12.dp))
-                Text(log.joinToString("\n"), style = MaterialTheme.typography.labelSmall, fontFamily = FontFamily.Monospace)
+                SelectionContainer {
+                    Text(text, style = MaterialTheme.typography.labelSmall, fontFamily = FontFamily.Monospace)
+                }
+                Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(onClick = {
+                        context.getSystemService(ClipboardManager::class.java)
+                            ?.setPrimaryClip(ClipData.newPlainText("FreeBrush log", text))
+                    }) { Text("Скопировать") }
+                    TextButton(onClick = {
+                        val send = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text)
+                        context.startActivity(Intent.createChooser(send, "Журнал синхронизации"))
+                    }) { Text("Поделиться") }
+                }
             }
         }
     }

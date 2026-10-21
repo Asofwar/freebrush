@@ -57,7 +57,7 @@ fun BrushHeaderCard(brush: BrushInfo, sync: SyncState, onSync: () -> Unit, modif
                     Text(it, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-            Image(painterResource(R.drawable.brush_art), null, modifier = Modifier.height(140.dp).width(48.dp))
+            Image(painterResource(R.drawable.brush_art), "Щётка", modifier = Modifier.height(140.dp).width(48.dp))
             Spacer(Modifier.width(14.dp))
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Icon(Icons.Battery, null, tint = batteryColor(brush.battery), modifier = Modifier.size(30.dp))
@@ -149,7 +149,7 @@ fun ModeAndHeadRow(
             Text(
                 if (worn) "Пора менять" else brush.headDays?.let { "$it дн. в работе" } ?: "",
                 style = MaterialTheme.typography.bodyMedium,
-                color = if (worn) ScoreRed else MaterialTheme.colorScheme.onSurfaceVariant,
+                color = if (worn) readable(ScoreRed) else MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
     }
@@ -166,7 +166,7 @@ fun ModeAndHeadRow(
                     InfoRow("Износ по счётчику щётки", if (brush.headWear != null) "${brush.headWear} из ${brush.headWearMax ?: "—"}" else null)
                     if (worn) {
                         Spacer(Modifier.height(6.dp))
-                        Text("Похоже, насадку пора менять", style = MaterialTheme.typography.labelLarge, color = ScoreRed)
+                        Text("Похоже, насадку пора менять", style = MaterialTheme.typography.labelLarge, color = readable(ScoreRed))
                     }
                     HeadActions(brush.headWearMax, busy, onReset = { headDetails = false; onResetHead() }, onLimit = onHeadLimit)
                 }

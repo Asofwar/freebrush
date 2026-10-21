@@ -17,8 +17,6 @@ import dev.asofwar.freebrush.ble.OcleanProtocol.WRITE
 import dev.asofwar.freebrush.data.BrushSession
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.withContext
-import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -199,7 +197,7 @@ class OcleanClient(private val context: Context) {
             !BrushControls.hasGrowth(hardware) -> null
             // A brush added to the app keeps its own level: its base is unknown, and writing one would reset it.
             growthTotal == null -> null.also { onStep("Очки роста: уровень ведёт сама щётка") }
-            else -> syncGrowth(s, growthTotal, onGrowth, onStep)
+            else -> syncGrowth(growthLink(s, onStep), growthTotal, onGrowth, onStep)
         }
         onStep("Готово: заряд ${battery ?: "?"} %, чисток в щётке ${sessions.size}")
 
@@ -215,24 +213,14 @@ class OcleanClient(private val context: Context) {
         )
     }
 
-    /**
-     * Adds the brush's new growth points to [total] and writes the sum back as its base, which also clears the
-     * brush's counter. The new total goes to [onGrowth] the moment the write is delivered, before the ack, and that
-     * part cannot be cancelled: from then on the brush counts from zero, so a total lost with a dropped ack or a
-     * cancelled sync would make the level on the brush fall back next time. Without an ack the counter is read again;
-     * if it still holds the points, the brush ignored the write and the old total is put back. Returns the total the
-     * app keeps now, or null when nothing was written.
-     */
-    private suspend fun syncGrowth(s: GattSession, total: Int, onGrowth: (Int) -> Unit, onStep: (String) -> Unit): Int? {
-        val reply = request(s, WRITE, BrushControls.GROWTH_READ, onStep) { BrushControls.parseGrowth(it.value) != null } ?: return null
-        val added = BrushControls.parseGrowth(reply.value) ?: return null
-        if (added == 0) {
-            onStep("Очки роста: новых нет, всего $total")
-            return total
-        }
-        val newTotal = (total + added).coerceAtMost(0xFFFF)
-        val cmd = BrushControls.growthBase(newTotal)
-        return withContext(NonCancellable) {
+    /** The brush side of [syncGrowth]: the `0308` counter and the `0226` base over this session. */
+    private fun growthLink(s: GattSession, onStep: (String) -> Unit) = object : GrowthLink {
+        override suspend fun readCounter(): Int? =
+            request(s, WRITE, BrushControls.GROWTH_READ, onStep) { BrushControls.parseGrowth(it.value) != null }
+                ?.let { BrushControls.parseGrowth(it.value) }
+
+        override suspend fun writeBase(total: Int, onDelivered: () -> Unit): BaseWrite = coroutineScope {
+            val cmd = BrushControls.growthBase(total)
             onStep("→ ${WRITE.short()} ${cmd.toHex()}")
             val ack = async(start = CoroutineStart.UNDISPATCHED) {
                 withTimeoutOrNull(5_000) { s.notifications.first { OcleanProtocol.isAck(it.value, cmd) } }
@@ -241,24 +229,11 @@ class OcleanClient(private val context: Context) {
                 s.write(SERVICE, WRITE, cmd)
             } catch (e: GattException) {
                 ack.cancel()
-                onStep("Очки роста не записаны: ${e.message}")
-                return@withContext null
+                onStep("Запись не удалась: ${e.message}")
+                return@coroutineScope BaseWrite.FAILED
             }
-            onGrowth(newTotal)
-            if (ack.await() != null) {
-                onStep("Очки роста: +$added, всего $newTotal")
-                return@withContext newTotal
-            }
-            val counter = request(s, WRITE, BrushControls.GROWTH_READ, onStep) { BrushControls.parseGrowth(it.value) != null }
-                ?.let { BrushControls.parseGrowth(it.value) }
-            if (counter != null && counter >= added) {
-                onGrowth(total)
-                onStep("Щётка не приняла очки роста, всего по-прежнему $total")
-                total
-            } else {
-                onStep("Очки роста: +$added, всего $newTotal (без подтверждения)")
-                newTotal
-            }
+            onDelivered()
+            if (ack.await() != null) BaseWrite.ACKED else BaseWrite.UNCONFIRMED
         }
     }
 

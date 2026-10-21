@@ -24,6 +24,12 @@ val gitCommit: String = runCatching {
     providers.exec { commandLine("git", "rev-parse", "--short", "HEAD") }.standardOutput.asText.get().trim()
 }.getOrDefault("")
 
+// Debug builds take adb commands only with this token (local.properties, not in git); empty disables them.
+val localProperties = Properties().apply {
+    rootProject.file("local.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
+}
+val debugToken: String = localProperties.getProperty("freebrush.debugToken", "").trim()
+
 // Release key: keystore.properties (not in git) on the release machine, written from secrets by the Release
 // workflow. Updates install over the app only when signed with the same key, so a release refuses to build
 // without it. Where the key is present, debug builds are signed with it too: a test build then installs over the
@@ -69,10 +75,15 @@ android {
         val signing = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
         getByName("debug") {
             signingConfig = signing
+            buildConfigField("String", "DEBUG_TOKEN", "\"$debugToken\"")
         }
         getByName("release") {
-            isMinifyEnabled = false
+            // R8 and resource shrinking: the APK drops from about 24 MB to a few, and Compose runs faster.
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             signingConfig = signing
+            buildConfigField("String", "DEBUG_TOKEN", "\"\"")
         }
     }
 
@@ -129,6 +140,7 @@ dependencies {
     debugImplementation(libs.compose.ui.tooling)
 
     testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
     // The real org.json: android.jar only has stubs that throw in unit tests.
     testImplementation(libs.json)
 }

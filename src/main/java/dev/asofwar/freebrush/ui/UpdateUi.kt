@@ -17,6 +17,8 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.semantics.Role
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -43,7 +45,7 @@ fun UpdatesCard(modifier: Modifier = Modifier) {
         InfoRow("Версия", BuildConfig.VERSION_NAME)
         RowDivider()
         Row(
-            Modifier.fillMaxWidth().clickable { updater.setAuto(!auto) }.padding(vertical = 10.dp),
+            Modifier.fillMaxWidth().toggleable(value = auto, role = Role.Switch) { updater.setAuto(it) }.padding(vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(Modifier.weight(1f)) {
@@ -56,7 +58,7 @@ fun UpdatesCard(modifier: Modifier = Modifier) {
                 )
             }
             Spacer(Modifier.width(12.dp))
-            Switch(checked = auto, onCheckedChange = updater::setAuto)
+            Switch(checked = auto, onCheckedChange = null)
         }
         RowDivider()
         ActionRow(

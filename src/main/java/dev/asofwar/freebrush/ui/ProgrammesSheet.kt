@@ -36,6 +36,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -277,7 +278,7 @@ private fun StepEditor(index: Int, step: Step, onChange: (Step) -> Unit, onRemov
                 Text("  Шаг ${index + 1}", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
                 if (onRemove != null) TextButton(onClick = onRemove) { Text("Убрать") }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Motor.entries.forEach { m ->
                     FilterChip(
                         selected = m == motor,

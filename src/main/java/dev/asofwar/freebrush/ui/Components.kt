@@ -100,7 +100,7 @@ fun SyncChip(sync: SyncState, brush: BrushInfo, onRetry: () -> Unit) {
             is SyncState.Done -> Triple(
                 Icons.Check,
                 if (state.added > 0) "Новых чисток: ${state.added}" else "Синхронизировано в " + java.time.LocalTime.now().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm")),
-                ScoreGreen,
+                readable(ScoreGreen),
             )
             is SyncState.Failed -> Triple(Icons.Warning, state.message, MaterialTheme.colorScheme.error)
             SyncState.Idle -> Triple(

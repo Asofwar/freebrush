@@ -30,6 +30,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import dev.asofwar.freebrush.data.Programme
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -50,7 +51,7 @@ import kotlin.math.abs
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun HistoryScreen(sessions: List<BrushSession>, onOpen: (BrushSession) -> Unit) {
+fun HistoryScreen(sessions: List<BrushSession>, custom: List<Programme>, onOpen: (BrushSession) -> Unit) {
     if (sessions.isEmpty()) {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp)) {
             ScreenHeader("История")
@@ -80,20 +81,20 @@ fun HistoryScreen(sessions: List<BrushSession>, onOpen: (BrushSession) -> Unit) 
                     Row(Modifier.padding(top = 18.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text(dayTitle(day), style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
                         list.averageScore()?.let {
-                            Text("в среднем $it", style = MaterialTheme.typography.labelMedium, color = scoreColor(it))
+                            Text("в среднем $it", style = MaterialTheme.typography.labelMedium, color = readable(scoreColor(it)))
                         }
                     }
                 }
             }
             items(list, key = { it.key }) { s ->
-                SessionRow(s, Modifier.animateItem()) { onOpen(s) }
+                SessionRow(s, custom, Modifier.animateItem()) { onOpen(s) }
             }
         }
     }
 }
 
 @Composable
-private fun SessionRow(s: BrushSession, modifier: Modifier, onClick: () -> Unit) {
+private fun SessionRow(s: BrushSession, custom: List<Programme>, modifier: Modifier, onClick: () -> Unit) {
     Surface(
         modifier = modifier.fillMaxWidth().padding(vertical = 4.dp),
         shape = MaterialTheme.shapes.medium,
@@ -106,7 +107,7 @@ private fun SessionRow(s: BrushSession, modifier: Modifier, onClick: () -> Unit)
             Column(Modifier.weight(1f)) {
                 Text(s.time.toLocalTime().toString().take(5), style = MaterialTheme.typography.titleMedium)
                 Text(
-                    s.schemeId?.let { schemeName(it) } ?: "Чистка",
+                    s.schemeId?.let { schemeName(it, custom) } ?: "Чистка",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -127,7 +128,7 @@ private fun SessionRow(s: BrushSession, modifier: Modifier, onClick: () -> Unit)
 /** Session details in a bottom sheet: score, numbers, the mouth map and per-zone seconds. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SessionSheet(s: BrushSession, history: List<BrushSession>, onClose: () -> Unit) {
+fun SessionSheet(s: BrushSession, history: List<BrushSession>, custom: List<Programme>, onClose: () -> Unit) {
     val state = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(onDismissRequest = onClose, sheetState = state) {
         Column(
@@ -141,7 +142,7 @@ fun SessionSheet(s: BrushSession, history: List<BrushSession>, onClose: () -> Un
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     InfoRow("Чистил", formatDuration(s.durationSec))
                     InfoRow("Программа", s.plannedSec?.let { formatDuration(it) })
-                    InfoRow("Режим", s.schemeId?.let { schemeName(it) })
+                    InfoRow("Режим", s.schemeId?.let { schemeName(it, custom) })
                     InfoRow("Пояс щётки", s.tzOffsetMin?.let { "UTC%+d:%02d".format(it / 60, abs(it % 60)) })
                 }
             }

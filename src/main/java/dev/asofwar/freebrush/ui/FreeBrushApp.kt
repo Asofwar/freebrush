@@ -26,6 +26,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -50,6 +53,9 @@ import dev.asofwar.freebrush.AppViewModel
 import dev.asofwar.freebrush.SyncState
 import dev.asofwar.freebrush.data.BrushInfo
 import dev.asofwar.freebrush.data.BrushSession
+
+/** Widest the content gets on unfolded phones and tablets. */
+val MAX_CONTENT_WIDTH = 640.dp
 
 private val BT_PERMISSIONS = arrayOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT)
 
@@ -124,6 +130,7 @@ private fun MainScreen(vm: AppViewModel, brush: BrushInfo, brushes: List<BrushIn
     var tab by rememberSaveable { mutableStateOf(Tab.Today) }
     var open by remember { mutableStateOf<BrushSession?>(null) }
     val sessions by vm.sessions.collectAsStateWithLifecycle()
+    val custom by vm.customProgrammes.collectAsStateWithLifecycle()
     val sync by vm.sync.collectAsStateWithLifecycle()
     val haptics = LocalHapticFeedback.current
 
@@ -163,7 +170,14 @@ private fun MainScreen(vm: AppViewModel, brush: BrushInfo, brushes: List<BrushIn
         },
     ) { pad ->
         Column(Modifier.padding(pad).fillMaxSize()) {
-            if (brushes.size > 1) BrushSwitcher(brushes, brush, vm::select, Modifier.padding(top = 8.dp))
+            if (brushes.size > 1) {
+                BrushSwitcher(
+                    brushes,
+                    brush,
+                    vm::select,
+                    Modifier.padding(top = 8.dp).fillMaxWidth().wrapContentWidth().widthIn(max = MAX_CONTENT_WIDTH),
+                )
+            }
             PullToRefreshBox(
                 isRefreshing = pulled && sync is SyncState.Running,
                 onRefresh = {
@@ -173,6 +187,8 @@ private fun MainScreen(vm: AppViewModel, brush: BrushInfo, brushes: List<BrushIn
                 modifier = Modifier.fillMaxSize(),
             ) {
                 AnimatedContent(
+                    // Wide screens: a readable column in the middle rather than cards stretched edge to edge.
+                    modifier = Modifier.fillMaxSize().wrapContentWidth().widthIn(max = MAX_CONTENT_WIDTH),
                     targetState = tab,
                     transitionSpec = {
                         val dir = if (targetState.ordinal > initialState.ordinal) 1 else -1
@@ -183,12 +199,12 @@ private fun MainScreen(vm: AppViewModel, brush: BrushInfo, brushes: List<BrushIn
                 ) { t ->
                     when (t) {
                         Tab.Today -> TodayScreen(sessions, sync, brush, vm::syncNow) { open = it }
-                        Tab.History -> HistoryScreen(sessions) { open = it }
+                        Tab.History -> HistoryScreen(sessions, custom) { open = it }
                         Tab.Brush -> BrushScreen(vm, brush, sync, onPair)
                     }
                 }
             }
         }
     }
-    open?.let { s -> SessionSheet(s, sessions) { open = null } }
+    open?.let { s -> SessionSheet(s, sessions, custom) { open = null } }
 }

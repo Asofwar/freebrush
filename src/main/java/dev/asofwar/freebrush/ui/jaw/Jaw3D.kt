@@ -37,6 +37,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -133,6 +135,14 @@ private object JawCache {
  * Frames are drawn only while something moves: the model makes one slow entrance turn and then rests, every
  * animation is finite, and nothing is sent to the GPU while the model is scrolled out of view.
  */
+/** What the model shows, in words: how many zones got enough time. */
+private fun jawDescription(s: BrushSession): String {
+    val zones = s.zones
+    if (zones.isEmpty()) return "3D-модель зубов: по этой чистке нет данных о зонах"
+    val brushed = zones.count { it >= 9 }
+    return "3D-модель зубов: прочищено $brushed из ${zones.size} зон, остальные меньше 9 секунд"
+}
+
 @Composable
 fun Jaw3D(session: BrushSession, history: List<BrushSession>, modifier: Modifier = Modifier) {
     val seconds = session.zoneSeconds()
@@ -229,10 +239,11 @@ fun Jaw3D(session: BrushSession, history: List<BrushSession>, modifier: Modifier
                     modifier = Modifier.matchParentSize(),
                 )
             }
-            // Gesture layer on top of the GL view.
+            // Gesture layer on top of the GL view; TalkBack reads a summary instead of the picture.
             Box(
                 Modifier
                     .matchParentSize()
+                    .semantics { contentDescription = jawDescription(session) }
                     .pointerInput(session.key, camera) {
                         detectTapGestures(
                             onTap = { o ->

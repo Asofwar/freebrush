@@ -52,6 +52,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -184,7 +186,7 @@ fun PairScreen(
     }
     val list = found.filter { it.address !in known && (showAll || it.looksLikeOclean) }.sortedByDescending { it.rssi }
     LazyColumn(
-        Modifier.fillMaxSize().safeDrawingPadding(),
+        Modifier.fillMaxSize().wrapContentWidth().widthIn(max = MAX_CONTENT_WIDTH).safeDrawingPadding(),
         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 24.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
         horizontalAlignment = Alignment.CenterHorizontally,

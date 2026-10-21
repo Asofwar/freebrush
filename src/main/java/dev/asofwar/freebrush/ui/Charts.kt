@@ -25,6 +25,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
+import dev.asofwar.freebrush.data.Programmes
+import dev.asofwar.freebrush.data.Programme
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -98,12 +104,13 @@ fun ScoreRing(score: Int?, size: Dp = 168.dp, showWord: Boolean = true) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
                 if (score == null) "—" else shown.toString(),
-                fontSize = (size.value * 0.30f).sp,
+                // Sized by the ring, not the font scale: the number has to fit inside it.
+                fontSize = with(LocalDensity.current) { (size * 0.30f).toSp() },
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onSurface,
             )
             if (showWord) {
-                Text(scoreWord(score), style = MaterialTheme.typography.labelMedium, color = color)
+                Text(scoreWord(score), style = MaterialTheme.typography.labelMedium, color = readable(color))
             }
         }
     }
@@ -117,7 +124,7 @@ fun ScoreBadge(score: Int?) {
         Modifier.size(44.dp).clip(CircleShape).background(color.copy(alpha = 0.16f)),
         contentAlignment = Alignment.Center,
     ) {
-        Text(score?.toString() ?: "—", color = color, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+        Text(score?.toString() ?: "—", color = readable(color), fontWeight = FontWeight.Bold, fontSize = 16.sp)
     }
 }
 
@@ -128,6 +135,7 @@ fun ScoreBadge(score: Int?) {
 @Composable
 fun DaysChart(sessions: List<BrushSession>, days: Int = 14) {
     val today = LocalDate.now()
+    val locale = LocalConfiguration.current.locales[0]
     val byDay = remember(sessions) { sessions.groupBy { it.time.toLocalDate() } }
     val range = remember(today) { (days - 1 downTo 0).map { today.minusDays(it.toLong()) } }
     val grow = remember(sessions) { List(days) { Animatable(0f) } }
@@ -142,7 +150,12 @@ fun DaysChart(sessions: List<BrushSession>, days: Int = 14) {
     val empty = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
     val goal = MaterialTheme.colorScheme.outline
     Column {
-        Canvas(Modifier.fillMaxWidth().height(132.dp)) {
+        val total = range.sumOf { byDay[it]?.size ?: 0 }
+        Canvas(
+            Modifier.fillMaxWidth().height(132.dp).semantics {
+                contentDescription = "Чистки за $days дней: всего $total, сегодня ${byDay[today]?.size ?: 0}"
+            },
+        ) {
             val slot = size.width / days
             val barW = slot * 0.56f
             val maxCount = maxOf(3, range.maxOf { byDay[it]?.size ?: 0 })
@@ -175,7 +188,7 @@ fun DaysChart(sessions: List<BrushSession>, days: Int = 14) {
         Row(Modifier.fillMaxWidth()) {
             range.forEach { day ->
                 Text(
-                    if (day == today) "сег" else day.dayOfWeek.getDisplayName(TextStyle.NARROW, Locale.getDefault()),
+                    if (day == today) "сег" else day.dayOfWeek.getDisplayName(TextStyle.NARROW, locale),
                     modifier = Modifier.weight(1f),
                     style = MaterialTheme.typography.labelSmall,
                     color = if (day == today) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
@@ -245,34 +258,11 @@ fun PressureBar(pressure: List<Int>) {
         }
         val heavy = pressure.drop(3).sum() * 100 / total
         if (heavy >= 20) {
-            Text("Сильный нажим $heavy % времени", style = MaterialTheme.typography.bodySmall, color = ScoreRed)
+            Text("Сильный нажим $heavy % времени", style = MaterialTheme.typography.bodySmall, color = readable(ScoreRed))
         }
     }
 }
 
-/**
- * Preset names reported by the community for the Oclean X family; X Pro Digital presets are not confirmed yet.
- * 230 and above are custom programmes.
- */
-fun schemeName(id: Int): String = when (id) {
-    0 -> "Стандартная чистка"
-    72 -> "Средне-сильная чистка"
-    73 -> "Сильная чистка"
-    74 -> "Чувствительные после чистки"
-    75 -> "Ежедневное отбеливание"
-    76 -> "Среднее отбеливание"
-    77 -> "Сильное отбеливание"
-    78 -> "Чувствительная чистка"
-    79 -> "Мягкий SPA"
-    80 -> "Стандартный SPA"
-    81 -> "Глубокий SPA"
-    82 -> "После сладкого"
-    83 -> "Свежесть после еды"
-    84 -> "Массаж дёсен"
-    85 -> "Уход за дёснами"
-    86 -> "Отбеливание для начинающих"
-    87 -> "Чистка брекетов"
-    88 -> "Быстрая чистка"
-    89 -> "В поездке"
-    else -> if (id >= 230) "Своя программа №$id" else "Режим №$id"
-}
+/** Name of programme [id] as the programme list shows it: built-in modes, Oclean's catalogue and the user's own. */
+fun schemeName(id: Int, custom: List<Programme>): String =
+    Programmes.find(id, custom)?.name ?: if (id >= 230) "Своя программа №$id" else "Режим №$id"

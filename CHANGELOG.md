@@ -6,6 +6,35 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- A brush that stops answering in the middle of a sync no longer leaves the sync running forever, and the other
+  brushes still sync.
+- Growth points are stored the moment the new base reaches the brush, so a lost confirmation or a closed screen can no
+  longer make the level on the brush fall back. A brush added to the app keeps the level it counts itself; FreeBrush
+  writes the level only of brushes whose total it knows.
+- A damaged history file is set aside instead of crashing the app on every start; history is written with a backup.
+- Removing or replacing a brush stops only that brush's Bluetooth jobs and no longer brings its history back.
+- The app syncs when it opens or returns from the background, not on every rotation or theme change, and brush
+  settings stay usable while a sync waits for a sleeping brush.
+- With Bluetooth off the search offers to turn it on and restarts by itself; a failed search can be retried, and a
+  permission refused for good leads to the app's settings.
+- The 3D jaw frees its graphics memory every time it leaves the screen.
+- Programme names in the history match the programme list.
+
+### Changed
+
+- Privacy: the app's data is excluded from cloud backup (moving to a new phone still brings it), Bluetooth packets
+  are logged in debug builds only, and the welcome screen no longer claims the app has no internet permission.
+- Updates need the SHA-256 published with the release; the release workflow pins its actions and holds the signing
+  key only for the build.
+- The release APK is built with R8: about 3 MB instead of 24 MB.
+- Accessibility: settings switches are single TalkBack elements, the 3D model and the chart have text descriptions,
+  status colours are darker in the light theme, the score stays inside its ring at large font sizes, and the motor
+  chips of a programme step wrap.
+- Wide screens show a centred column; the sync log can be copied or shared.
+- adb commands of debug builds need a token from local.properties.
+
 ## [0.2.0] - 2026-10-21
 
 ### Added
