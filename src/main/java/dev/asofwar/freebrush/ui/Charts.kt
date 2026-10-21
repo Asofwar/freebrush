@@ -1,6 +1,9 @@
 package dev.asofwar.freebrush.ui
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -124,4 +127,52 @@ fun DaysChart(sessions: List<BrushSession>, days: Int = 14) {
             }
         }
     }
+}
+
+/** Five pressure buckets, light to heavy, as one stacked bar. */
+@Composable
+fun PressureBar(pressure: List<Int>) {
+    val colors = listOf(
+        Color(0xFF9CC9E8), Color(0xFF5FA8D3), Color(0xFF2E9E6A), Color(0xFFE0A030), Color(0xFFD9534F),
+    )
+    val total = pressure.sum().takeIf { it > 0 } ?: return
+    Column {
+        Text("Нажим: от слабого к сильному", style = MaterialTheme.typography.bodySmall)
+        Row(Modifier.fillMaxWidth().height(12.dp).padding(top = 4.dp)) {
+            pressure.take(5).forEachIndexed { i, v ->
+                if (v > 0) Box(Modifier.weight(v.toFloat()).fillMaxHeight().background(colors[i]))
+            }
+        }
+        val heavy = pressure.drop(3).sum() * 100 / total
+        if (heavy >= 20) {
+            Text("Сильный нажим $heavy % времени", style = MaterialTheme.typography.bodySmall, color = colors[4])
+        }
+    }
+}
+
+/**
+ * Preset names reported by the community for the Oclean X family; X Pro Digital presets are not confirmed yet.
+ * 230 and above are custom programmes.
+ */
+fun schemeName(id: Int): String = when (id) {
+    0 -> "Стандартная чистка"
+    72 -> "Средне-сильная чистка"
+    73 -> "Сильная чистка"
+    74 -> "Чувствительные после чистки"
+    75 -> "Ежедневное отбеливание"
+    76 -> "Среднее отбеливание"
+    77 -> "Сильное отбеливание"
+    78 -> "Чувствительная чистка"
+    79 -> "Мягкий SPA"
+    80 -> "Стандартный SPA"
+    81 -> "Глубокий SPA"
+    82 -> "После сладкого"
+    83 -> "Свежесть после еды"
+    84 -> "Массаж дёсен"
+    85 -> "Уход за дёснами"
+    86 -> "Отбеливание для начинающих"
+    87 -> "Чистка брекетов"
+    88 -> "Быстрая чистка"
+    89 -> "В поездке"
+    else -> if (id >= 230) "Своя программа №$id" else "Режим №$id"
 }

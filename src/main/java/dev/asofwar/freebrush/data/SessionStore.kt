@@ -53,15 +53,11 @@ class SessionStore(context: Context) {
         }
     }
 
-    private fun merge(old: BrushSession, new: BrushSession) = old.copy(
-        validDurationSec = new.validDurationSec ?: old.validDurationSec,
-        score = new.score ?: old.score,
-        schemeId = new.schemeId ?: old.schemeId,
-        zones = new.zones.ifEmpty { old.zones },
-        pressure = new.pressure.ifEmpty { old.pressure },
-        overPressureCount = new.overPressureCount ?: old.overPressureCount,
-        raw = if (new.raw.length > old.raw.length) new.raw else old.raw,
-    )
+    /**
+     * A full record replaces the short head seen earlier for the same session. A stored full record is
+     * never overwritten: a misaligned re-read of the same session must not replace good data.
+     */
+    private fun merge(old: BrushSession, new: BrushSession) = if (!old.isComplete && new.isComplete) new else old
 
     private fun readFile(): List<BrushSession> {
         if (!file.exists()) return emptyList()

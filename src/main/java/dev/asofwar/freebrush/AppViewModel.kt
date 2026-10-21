@@ -69,7 +69,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 val result = client.sync(info.address) { step ->
                     lines += step
                     _log.value = lines.toList()
-                    _sync.value = SyncState.Running(step)
+                    // Raw packet lines go to the log only.
+                    if (!step.startsWith("←") && !step.startsWith("→")) _sync.value = SyncState.Running(step)
                 }
                 val added = store.addAll(result.sessions)
                 prefs.save(

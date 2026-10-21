@@ -166,10 +166,14 @@ class GattSession(private val context: Context, private val device: BluetoothDev
         return op("read ${uuid.short()}") { it.readCharacteristic(c) }
     }
 
-    suspend fun write(service: UUID, uuid: UUID, value: ByteArray, withResponse: Boolean = true) {
+    /** Writes with response when the characteristic supports it, otherwise without. */
+    suspend fun write(service: UUID, uuid: UUID, value: ByteArray) {
         val c = characteristic(service, uuid)
-        val type = if (withResponse) BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
-        else BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
+        val type = if (c.properties and BluetoothGattCharacteristic.PROPERTY_WRITE != 0) {
+            BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+        } else {
+            BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
+        }
         Log.d(TAG, "write ${uuid.short()} ${value.toHex()}")
         op<Unit>("write ${uuid.short()}") { g ->
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -186,12 +190,18 @@ class GattSession(private val context: Context, private val device: BluetoothDev
     }
 
     /** Enables notifications; returns false when the characteristic has no CCCD to write. */
-    suspend fun enableNotifications(service: UUID, uuid: UUID): Boolean {
+    suspend fun enableNotifications(service: UUID, uuid: UUID): Boolean = setNotifications(service, uuid, true)
+
+    /** Writes 0x0000 to the CCCD; some firmware keeps it enabled across connections and then refuses to re-enable. */
+    suspend fun disableNotifications(service: UUID, uuid: UUID): Boolean = setNotifications(service, uuid, false)
+
+    private suspend fun setNotifications(service: UUID, uuid: UUID, enable: Boolean): Boolean {
         val c = characteristic(service, uuid)
         val g = gatt ?: throw GattException("Нет соединения")
-        if (!g.setCharacteristicNotification(c, true)) return false
+        if (!g.setCharacteristicNotification(c, enable)) return false
         val cccd = c.getDescriptor(CCCD) ?: return false
-        val value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+        val value = if (enable) BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+        else BluetoothGattDescriptor.DISABLE_NOTIFICATION_VALUE
         op<Unit>("cccd ${uuid.short()}") { gg ->
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 gg.writeDescriptor(cccd, value) == BluetoothStatusCodes.SUCCESS

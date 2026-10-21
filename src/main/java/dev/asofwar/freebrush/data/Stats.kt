@@ -24,17 +24,19 @@ fun List<BrushSession>.averageScore(): Int? =
 fun List<BrushSession>.since(day: LocalDate): List<BrushSession> = filter { !it.time.toLocalDate().isBefore(day) }
 
 fun List<BrushSession>.toCsv(): String = buildString {
-    append("time,duration_s,valid_duration_s,score,scheme,over_pressure")
+    append("time,epoch,duration_s,planned_s,score,scheme")
     Zones.ALL.indices.forEach { append(",zone${it + 1}") }
+    (1..5).forEach { append(",pressure$it") }
     append(",raw\n")
     for (s in this@toCsv) {
         append(s.time).append(',')
+        append(s.epochSec).append(',')
         append(s.durationSec).append(',')
-        append(s.validDurationSec ?: "").append(',')
+        append(s.plannedSec ?: "").append(',')
         append(s.score ?: "").append(',')
-        append(s.schemeId ?: "").append(',')
-        append(s.overPressureCount ?: "")
+        append(s.schemeId ?: "")
         Zones.ALL.indices.forEach { append(',').append(s.zones.getOrNull(it) ?: "") }
+        (0 until 5).forEach { append(',').append(s.pressure.getOrNull(it) ?: "") }
         append(',').append(s.raw).append('\n')
     }
 }

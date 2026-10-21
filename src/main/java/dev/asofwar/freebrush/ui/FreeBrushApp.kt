@@ -72,6 +72,7 @@ import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 import java.util.Date
+import kotlin.math.abs
 
 private val BT_PERMISSIONS = arrayOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT)
 
@@ -237,8 +238,8 @@ private fun TodayScreen(sessions: List<BrushSession>, sync: SyncState, brush: Br
                     } else {
                         Text(formatDuration(last.durationSec), style = MaterialTheme.typography.headlineMedium)
                         Text(last.time.format(DateTimeFormatter.ofLocalizedDateTime(FormatStyle.SHORT)), style = MaterialTheme.typography.bodySmall)
-                        last.overPressureCount?.takeIf { it > 0 }?.let {
-                            Text("Сильное нажатие: $it раз", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                        last.plannedSec?.takeIf { it > last.durationSec }?.let {
+                            Text("Программа: ${formatDuration(it)}", style = MaterialTheme.typography.bodySmall)
                         }
                     }
                 }
@@ -254,6 +255,10 @@ private fun TodayScreen(sessions: List<BrushSession>, sync: SyncState, brush: Br
                 Column(Modifier.padding(16.dp)) {
                     Text("Зоны последней чистки", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(bottom = 8.dp))
                     ZoneBars(last.zones, "")
+                    if (last.pressure.isNotEmpty()) {
+                        Spacer(Modifier.padding(6.dp))
+                        PressureBar(last.pressure)
+                    }
                 }
             }
         }
@@ -325,12 +330,15 @@ private fun SessionDialog(s: BrushSession, onClose: () -> Unit) {
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("Оценка: ${s.score ?: "—"}")
-                Text("Длительность: ${formatDuration(s.durationSec)}")
-                s.validDurationSec?.let { Text("Эффективно: ${formatDuration(it)}") }
-                s.schemeId?.let { Text("Режим: $it") }
-                s.overPressureCount?.let { Text("Сильное нажатие: $it") }
+                Text("Чистил: ${formatDuration(s.durationSec)}")
+                s.plannedSec?.let { Text("Программа: ${formatDuration(it)}") }
+                s.schemeId?.let { Text("Режим: ${schemeName(it)}") }
+                s.tzOffsetMin?.let { Text("Часовой пояс щётки: UTC%+d:%02d".format(it / 60, abs(it % 60))) }
                 if (s.zones.isNotEmpty()) ZoneBars(s.zones, "")
-                if (s.pressure.isNotEmpty()) Text("Нажим: ${s.pressure.joinToString()}")
+                if (s.pressure.isNotEmpty()) PressureBar(s.pressure)
+                if (!s.isComplete) {
+                    Text("Щётка передала только начало записи: без оценки и зон.", style = MaterialTheme.typography.bodySmall)
+                }
                 Text(s.raw, style = MaterialTheme.typography.labelSmall, fontFamily = FontFamily.Monospace)
             }
         },
