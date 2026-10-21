@@ -62,6 +62,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.asofwar.freebrush.SyncState
 import dev.asofwar.freebrush.ble.BrushControls
+import dev.asofwar.freebrush.ble.BrushWatch
 import dev.asofwar.freebrush.ble.hex
 import dev.asofwar.freebrush.data.BrushInfo
 import dev.asofwar.freebrush.data.BrushSession
@@ -90,6 +91,8 @@ fun BrushingScreen(
     sessions: List<BrushSession>,
     custom: List<Programme>,
     sync: SyncState,
+    watch: BrushWatch?,
+    onWatch: () -> Unit,
     onSync: () -> Unit,
     onClose: () -> Unit,
 ) {
@@ -120,6 +123,7 @@ fun BrushingScreen(
     var countdown by remember { mutableIntStateOf(3) }
     var startedEpoch by rememberSaveable { mutableLongStateOf(0L) }
     var confirmExit by remember { mutableStateOf(false) }
+    var announced by rememberSaveable { mutableIntStateOf(0) }
 
     val step = ends.indexOfFirst { elapsed < it }.let { if (it < 0) plan.lastIndex else it }
     val current = plan[step]
@@ -187,16 +191,32 @@ fun BrushingScreen(
             }
         }
     }
-    var announced by rememberSaveable { mutableIntStateOf(0) }
     LaunchedEffect(step, phase) {
         if (phase == Phase.Running && step != announced) {
             announced = step
             cue(Zones.ALL[current.zone])
         }
     }
-    // Right after brushing the brush is awake: fetch the real record.
-    LaunchedEffect(phase) {
-        if (phase != Phase.Done) return@LaunchedEffect
+    // Watch the brush while the screen is open: the guide starts with the motor, and ends when the brush has stored
+    // the session (the view model then reads it). Without a watch the buttons still work by hand.
+    LaunchedEffect(Unit) { onWatch() }
+    LaunchedEffect(watch) {
+        when (watch) {
+            BrushWatch.Saved -> if (phase == Phase.Running || phase == Phase.Countdown) {
+                phase = Phase.Done
+                cue("Готово", end = true)
+            } else if (phase == Phase.Ready) {
+                // A record stored before the guide started (the brush was only woken): watch for the next one.
+                onWatch()
+            }
+            else -> Unit
+        }
+    }
+    // No watch that will see the record (none, or it failed): fetch the record a moment after the guide ends.
+    LaunchedEffect(phase, watch) {
+        if (phase != Phase.Done || watch is BrushWatch.Saved || watch is BrushWatch.Waiting || watch is BrushWatch.Connecting) {
+            return@LaunchedEffect
+        }
         delay(3_000)
         onSync()
     }
@@ -235,7 +255,7 @@ fun BrushingScreen(
             Spacer(Modifier.height(18.dp))
             AnimatedContent(phase, transitionSpec = { fadeIn(tween(250)) togetherWith fadeOut(tween(150)) }, label = "phase") { p ->
                 when (p) {
-                    Phase.Ready -> ReadyPanel(plan, sound, voice, onSound = {
+                    Phase.Ready -> ReadyPanel(plan, sound, voice, watch, onRetry = onWatch, onSound = {
                         sound = it
                         prefs.edit().putBoolean("sound", it).apply()
                     }, onVoice = {
@@ -281,12 +301,24 @@ private fun ReadyPanel(
     plan: List<ZoneStep>,
     sound: Boolean,
     voice: Boolean,
+    watch: BrushWatch?,
+    onRetry: () -> Unit,
     onSound: (Boolean) -> Unit,
     onVoice: (Boolean) -> Unit,
     onStart: () -> Unit,
 ) {
     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-        Text("Включи щётку и нажми «Начать»", style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
+        val (title, hint) = when (watch) {
+            BrushWatch.Waiting -> "Включи щётку и нажми «Начать»" to "Щётка на связи: когда выключишь её, покажу итог сам"
+            BrushWatch.Connecting, null -> "Возьми щётку в руку" to "Подключаюсь, чтобы начать подсказки вместе со щёткой"
+            is BrushWatch.Failed -> "Включи щётку и нажми «Начать»" to "Щётка не на связи (${watch.message}), подсказки пойдут по кнопке"
+            else -> "Включи щётку и нажми «Начать»" to null
+        }
+        Text(title, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
+        hint?.let {
+            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
+        }
+        if (watch is BrushWatch.Failed) TextButton(onClick = onRetry) { Text("Подключиться ещё раз") }
         Spacer(Modifier.height(6.dp))
         Text(
             "${formatDuration(plan.sumOf { it.seconds })} · 8 зон по кругу, как подсвечивает модель",

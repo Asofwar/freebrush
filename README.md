@@ -27,7 +27,7 @@ that is needed. FreeBrush reads the data straight from the brush and keeps it on
 | Brushing history: score, duration, zones, pressure¹ | ✅ on the phone | ✅ in the cloud |
 | Brush-head counters (days, sessions, wear) | ✅ | ✅ |
 | Works without an account | ✅ | ❌ |
-| Internet access | only the update check, can be turned off | required |
+| Internet access | only the update check (can be turned off) and the firmware check you tap | required |
 | Ads / splash banners | none | server-driven banner |
 | Streaks, two-week chart, daily goal | ✅ | partly |
 | 3D jaw model you can rotate and tap for per-zone stats | ✅ | flat diagram |
@@ -39,7 +39,7 @@ that is needed. FreeBrush reads the data straight from the brush and keeps it on
 | Growth level on the brush screen actually grows with brushing | ✅ | ❌ stays at level 1 |
 | Brushing programmes: the brush's built-in modes (incl. the hidden day/evening ones), Oclean's catalogue | ✅ | ✅ |
 | Custom programmes | ✅ up to 25, up to 9 steps, 32 cleaning levels + whitening, massage, sensitive, 5–255 s steps | 3 programmes, 6 steps, 4 levels per mode |
-| Firmware updates | ❌ never: firmware comes from the vendor's servers | ✅ |
+| Firmware updates | ✅ X Pro Digital: from Oclean's server on your tap or from an `OTA.bin` file, checked against the brush before anything is written | ✅ |
 | Family accounts, "expert" reports, AI chat | ❌ | ✅ |
 
 ¹ Only on brushes that log pressure. The X Pro Digital sends a fixed placeholder instead, so FreeBrush hides it.
@@ -97,7 +97,10 @@ Builds between releases are named `X.Y.Z-dev+<commit>`.
   `api.github.com` for this repository's latest release; GitHub sees your IP address and the app and
   Android versions in the User-Agent, nothing else is sent. The APK comes from GitHub's release downloads,
   must match the SHA-256 published with it and be signed with the same key as the installed app.
-  With the check turned off, the app makes no network requests at all.
+  With the check turned off, the app makes no network requests on its own.
+- Firmware: only when you tap **Щётка → Прошивка щётки → Проверить на сервере Oclean**, the app sends the brush's
+  MAC address and model to `hwapicore.oclean.com` (the server picks the file by the MAC, as for the official
+  app) and downloads the file from `hwmag.oclean.com`. Installing from an `OTA.bin` file needs no network.
 - No cloud backup: Android's backup to Google Drive excludes the app's data. Moving to a new phone with
   Android's device transfer still brings the history and brushes along.
 - Bluetooth packets are written to the system log only in debug builds.
@@ -125,7 +128,9 @@ interoperability against the behaviour of the official app.
 
 FreeBrush is an independent project. It is not affiliated with, endorsed by or connected to Oclean or
 its parent company. "Oclean" is a trademark of its respective owner and is used here only to say
-which devices the app works with. Use the app at your own risk. It never writes firmware to the brush.
+which devices the app works with. Use the app at your own risk. Firmware installs are unofficial: the app
+checks the file against the brush and writes the new image beside the running one, but a failure in the last
+seconds of an install can leave the brush unusable.
 
 ## License
 
@@ -159,9 +164,11 @@ FreeBrush — открытое Android-приложение для умных щ
 - Чистка с подсказками: 3D-челюсть ведёт по зонам с отсчётом, вибрацией, звуком и голосом, слабым зонам даёт
   больше времени, а после чистки сравнивает план с тем, что записала щётка.
 - Обновляется сама: APK берётся из [релизов](../../releases/latest) на GitHub.
+- Обновление прошивки X Pro Digital: с сервера Oclean (по нажатию; сервер узнаёт MAC и модель щётки) или из
+  файла `OTA.bin`. Перед записью файл сверяется со щёткой; новый образ пишется рядом с работающим, а
+  переключение на него идёт в самом конце. Это неофициальная установка, на свой риск.
 
-**Чего не будет:** обновления прошивки (файлы лежат на серверах Oclean), семейные аккаунты, «экспертные»
-отчёты, AI-чат.
+**Чего не будет:** семейные аккаунты, «экспертные» отчёты, AI-чат.
 
 **Перед синхронизацией закрой официальное приложение Oclean.** Щётка держит только одно соединение,
 а официальное приложение, судя по всему, стирает с неё историю чисток при своей синхронизации.

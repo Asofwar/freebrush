@@ -104,6 +104,15 @@ object OcleanProtocol {
         return packet.u8(5).takeIf { it in 0..100 }
     }
 
+    /**
+     * The byte of the status reply that steps up when the brush stores a session record (`03 03 02 0e7b 27 11 00`:
+     * 0x11 before a brushing, 0x12 once it was saved; seen on an X Pro Digital, 2026-10-21).
+     */
+    fun parseStatusRecords(packet: ByteArray): Int? {
+        if (!hasType(packet, CMD_STATUS) || packet.size < 7) return null
+        return packet.u8(6)
+    }
+
     class Settings(
         /** The 34 data bytes as received, kept so newly understood fields can be read from stored settings. */
         val raw: ByteArray,

@@ -16,6 +16,7 @@ import dev.asofwar.freebrush.ble.OcleanProtocol.SESSION_STREAM
 import dev.asofwar.freebrush.ble.OcleanProtocol.WRITE
 import dev.asofwar.freebrush.data.BrushSession
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.async
@@ -89,6 +90,141 @@ class OcleanClient(private val context: Context) {
         }
 
     class ApplyResult(val confirmed: Int, val total: Int, val settings: OcleanProtocol.Settings?)
+
+    /**
+     * Stays connected while the guided brushing screen is open and reports through [onState] when the brush has
+     * stored a session: a byte of the status reply steps up then. The start of a brushing is not visible from outside
+     * (no packet changes while the motor runs), so the guide is started by hand. Returns when the session is stored,
+     * or throws when the brush goes away.
+     */
+    suspend fun watch(address: String, onState: (BrushWatch) -> Unit, onStep: (String) -> Unit) = withBrush(address, onStep) { s ->
+        coroutineScope {
+            val detector = BrushWatchDetector()
+            onState(BrushWatch.Waiting)
+            val listener = async(start = CoroutineStart.UNDISPATCHED) {
+                s.notifications.collect { n ->
+                    if (n.characteristic == NOTIFY && detector.status(n.value)) onStep("щётка сохранила чистку")
+                }
+            }
+            try {
+                while (detector.state != BrushWatch.Saved) {
+                    if (!s.isConnected) throw GattException("Щётка отключилась")
+                    try {
+                        s.write(SERVICE, WRITE, OcleanProtocol.CMD_STATUS)
+                    } catch (e: GattException) {
+                        onStep("Статус не отправлен: ${e.message}")
+                    }
+                    delay(2_000)
+                }
+                onState(BrushWatch.Saved)
+            } finally {
+                listener.cancel()
+            }
+        }
+    }
+
+    /** Read-only look at the brush's DFU bootloader: chip, boot info, stored images. Writes nothing to flash. */
+    suspend fun dfuInfo(address: String, onStep: (String) -> Unit): GoodixDfuUpdate.ChipState = withBrush(address, onStep) { s ->
+        dfu(s, onStep) { GoodixDfuUpdate.readState(it, onStep) }
+    }
+
+    /** What an install did: the chip as it was before, and whether the brush answered the end frame. */
+    class FirmwareResult(val before: GoodixDfuUpdate.ChipState, val answered: Boolean)
+
+    /**
+     * Installs [firmware] on a Goodix brush: checks the battery, reads the chip, checks the file against it
+     * ([GoodixDfuUpdate.plan]; nothing is written before it passes) and writes it. The brush restarts right after.
+     * [trusted] is true for a file the Oclean server picked for this brush.
+     */
+    suspend fun installFirmware(
+        address: String,
+        firmware: GoodixDfu.Firmware,
+        trusted: Boolean,
+        knownImage: String?,
+        onChip: (GoodixDfuUpdate.ChipState) -> Unit,
+        onProgress: (Int, Int) -> Unit,
+        onStep: (String) -> Unit,
+    ): FirmwareResult = withBrush(address, onStep) { s ->
+        val battery = runCatching { s.read(BATTERY_SERVICE, BATTERY_LEVEL)[0].toInt() and 0xFF }.getOrNull()
+            ?: throw GattException("Не удалось узнать заряд щётки")
+        onStep("Заряд $battery %")
+        if (battery < GoodixDfuUpdate.MIN_BATTERY) {
+            throw GattException("Заряд $battery %: для прошивки нужно не меньше ${GoodixDfuUpdate.MIN_BATTERY} %")
+        }
+        dfu(s, onStep) { link ->
+            val state = GoodixDfuUpdate.readState(link, onStep)
+            onChip(state)
+            val plan = GoodixDfuUpdate.plan(state, firmware, trusted, knownImage)
+            FirmwareResult(state, GoodixDfuUpdate.flash(link, plan, onProgress, onStep))
+        }
+    }
+
+    /** Checks [firmware] against the brush as an install would, and returns the plan; writes nothing. */
+    suspend fun planFirmware(
+        address: String,
+        firmware: GoodixDfu.Firmware,
+        trusted: Boolean,
+        knownImage: String?,
+        onStep: (String) -> Unit,
+    ): GoodixDfuUpdate.Plan = withBrush(address, onStep) { s ->
+        dfu(s, onStep) { link -> GoodixDfuUpdate.plan(GoodixDfuUpdate.readState(link, onStep), firmware, trusted, knownImage) }
+    }
+
+    /** After an install: whether the brush boots [firmware] now. Writes nothing. */
+    suspend fun verifyFirmware(address: String, firmware: GoodixDfu.Firmware, onStep: (String) -> Unit): Boolean =
+        GoodixDfuUpdate.installed(dfuInfo(address, onStep), firmware)
+
+    /** Opens the DFU link on a connected brush for [block]. */
+    private suspend fun <T> dfu(s: GattSession, onStep: (String) -> Unit, block: suspend (GoodixDfuLink) -> T): T = coroutineScope {
+        val link = GoodixDfuLink.open(s, this, onStep)
+        try {
+            block(link)
+        } finally {
+            coroutineContext.cancelChildren()
+        }
+    }
+
+    /**
+     * Experiment: keeps the connection open for [seconds] while the user brushes, subscribed to everything that can
+     * notify, and asks for the status every 3 s; every packet goes to [onStep] with the time since the start. Shows
+     * whether this brush sends anything live during brushing (the official app's handler for it expects nothing).
+     */
+    suspend fun listen(address: String, seconds: Int, onStep: (String) -> Unit): String = withBrush(address, onStep) { s ->
+        coroutineScope {
+            for ((svc, ch) in s.notifiable()) {
+                if (svc == SERVICE && (ch == NOTIFY || ch == SESSION_STREAM)) continue
+                val ok = runCatching { s.enableNotifications(svc, ch) }.getOrDefault(false)
+                onStep("подписка ${svc.short()}/${ch.short()}: ${if (ok) "да" else "нет"}")
+            }
+            val start = android.os.SystemClock.elapsedRealtime()
+            fun t() = "+%.1f с".format((android.os.SystemClock.elapsedRealtime() - start) / 1000.0)
+            var packets = 0
+            val logger = async(start = CoroutineStart.UNDISPATCHED) {
+                s.notifications.collect {
+                    packets++
+                    onStep("${t()} ← ${it.characteristic.short()} ${it.value.toHex()}")
+                }
+            }
+            onStep("${t()} слушаю, можно чистить")
+            try {
+                while (android.os.SystemClock.elapsedRealtime() - start < seconds * 1000L) {
+                    if (!s.isConnected) {
+                        onStep("${t()} щётка отключилась")
+                        break
+                    }
+                    try {
+                        s.write(SERVICE, WRITE, OcleanProtocol.CMD_STATUS)
+                    } catch (e: GattException) {
+                        onStep("${t()} статус не отправлен: ${e.message}")
+                    }
+                    delay(3_000)
+                }
+            } finally {
+                logger.cancel()
+            }
+            "Эксперимент: ${t()}, пакетов $packets"
+        }
+    }
 
     /**
      * Writes [commands] (bytes and a label for the log) one by one, each waiting for the brush's "OK", then reads

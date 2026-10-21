@@ -13,6 +13,15 @@ All notable changes to this project are documented here. The format follows
   with up to half again as much time for zones the recent sessions left short. The 3D jaw turns to each zone and
   lights it, with a countdown, the next zone, pause, a buzz and a beep at every change and, if wanted, the zone
   spoken aloud. Afterwards the app fetches the real record from the brush and shows the plan next to it, zone by zone.
+  While the screen is open the app stays connected and ends the guide by itself as soon as the brush has stored the
+  session (a byte of its status reply steps up with every saved record), then reads that record at once.
+- Firmware updates for the X Pro Digital, experimental: Brush tab, "Прошивка щётки". The file comes from Oclean's
+  server when you tap the check (the server is told the brush's MAC address and model, as with the official app) or
+  from an `OTA.bin` you pick. Before anything is written the app checks the battery (at least 30 %), the chip (Goodix
+  GR5515), that the image is the brush's own program and the flash addresses. The new image goes to the free second
+  bank and the brush switches to it only at the end, after checking the sum; afterwards the app reads which image the
+  brush starts. The protocol was checked against a real brush without writing; a full install on a real brush has not
+  been tried yet.
 
 ## [0.2.1] - 2026-10-21
 

@@ -210,6 +210,19 @@ private fun MainScreen(vm: AppViewModel, brush: BrushInfo, brushes: List<BrushIn
     }
     open?.let { s -> SessionSheet(s, sessions, custom) { open = null } }
     if (guiding) {
-        BrushingScreen(brush, sessions, custom, sync, onSync = vm::syncNow, onClose = { guiding = false })
+        val watch by vm.watch.collectAsStateWithLifecycle()
+        BrushingScreen(
+            brush,
+            sessions,
+            custom,
+            sync,
+            watch = watch,
+            onWatch = vm::startWatch,
+            onSync = vm::syncNow,
+            onClose = {
+                vm.stopWatch()
+                guiding = false
+            },
+        )
     }
 }

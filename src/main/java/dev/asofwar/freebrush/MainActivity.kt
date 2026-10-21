@@ -47,9 +47,16 @@ class MainActivity : ComponentActivity() {
         intent.getStringExtra("send")?.let { list -> vm.sendRaw(list.split(',').map { it.trim() }.filter { it.isNotEmpty() }) }
         intent.getStringExtra("growth")?.toIntOrNull()?.let { vm.setGrowthTotal(it) }
         if (intent.getStringExtra("update") == "check") Updater.get(this).check()
+        // `listen 360` keeps the connection open for 360 s while brushing and logs everything the brush sends.
+        intent.getStringExtra("listen")?.toIntOrNull()?.let { vm.listen(it.coerceIn(10, 900)) }
+        // `dfu info` reads the DFU bootloader's state; nothing is written.
+        if (intent.getStringExtra("dfu") == "info") vm.dfuInfo()
+        // `dfuplan <file>` checks a firmware file from the app's external files against the brush; nothing is written.
+        intent.getStringExtra("dfuplan")?.let { vm.dfuPlan(it.substringAfterLast('/')) }
         if (intent.getStringExtra("fakesession") != null) vm.addFakeSession()
-        // `fakebrush Аня` adds a brush record with no device behind it, to try the switcher with one real brush.
-        intent.getStringExtra("fakebrush")?.let { vm.addFakeBrush(it) }
+        // `fakebrush Аня` adds a brush record with no device behind it, to try the switcher with one real brush;
+        // `fakebrush Аня@70:28:45:...` gives it that address (the firmware server answers by it).
+        intent.getStringExtra("fakebrush")?.let { vm.addFakeBrush(it.substringBefore('@'), it.substringAfter('@', "").ifEmpty { null }) }
         // `prog 231|2:30,16:30` sends programme 231 with gear:seconds steps.
         intent.getStringExtra("prog")?.let { spec ->
             runCatching {

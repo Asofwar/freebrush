@@ -10,7 +10,10 @@ import androidx.core.content.FileProvider
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import dev.asofwar.freebrush.ble.BrushControls
+import dev.asofwar.freebrush.ble.BrushWatch
 import dev.asofwar.freebrush.ble.FoundDevice
+import dev.asofwar.freebrush.ble.GoodixDfu
+import dev.asofwar.freebrush.ble.GoodixDfuUpdate
 import dev.asofwar.freebrush.ble.scanDevices
 import dev.asofwar.freebrush.ble.OcleanProtocol
 import dev.asofwar.freebrush.ble.OcleanClient
@@ -23,13 +26,16 @@ import dev.asofwar.freebrush.data.CustomProgrammes
 import dev.asofwar.freebrush.data.Programme
 import dev.asofwar.freebrush.data.SessionStore
 import dev.asofwar.freebrush.data.toCsv
+import dev.asofwar.freebrush.update.OcleanOta
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
@@ -39,6 +45,29 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
+
+/** The firmware update of a brush, step by step. */
+sealed interface FirmwareState {
+    data object Idle : FirmwareState
+    data class Working(val text: String) : FirmwareState
+
+    /** The server has nothing newer than [version]. */
+    data class UpToDate(val version: String) : FirmwareState
+
+    /** A checked file for brush [brushId] at [address]; [trusted] when the Oclean server picked it for that brush. */
+    data class Ready(
+        val brushId: String,
+        val address: String,
+        val firmware: GoodixDfu.Firmware,
+        val label: String,
+        val trusted: Boolean,
+    ) : FirmwareState
+    data class Installing(val text: String, val done: Int, val total: Int) : FirmwareState
+    data class Installed(val text: String) : FirmwareState
+
+    /** [retry] keeps the file, so the install can be started again. */
+    data class Failed(val text: String, val retry: Ready? = null) : FirmwareState
+}
 
 /** A write to the brush (settings, programme, probe) and how it went. */
 sealed interface ActionState {
@@ -417,9 +446,19 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun newProgrammeNum(): Int? = custom.nextNum()
 
     /** Debug: a brush record with an address no device has, so the switcher can be tried with one brush. */
-    fun addFakeBrush(label: String) {
+    fun addFakeBrush(label: String, address: String? = null) {
         val current = brush.value
-        prefs.add(BrushInfo(id = BrushInfo.newId(), address = "00:00:00:00:00:%02X".format(brushes.value.size), label = label))
+        prefs.add(
+            BrushInfo(
+                id = BrushInfo.newId(),
+                address = address ?: "00:00:00:00:00:%02X".format(brushes.value.size),
+                label = label,
+                // Like the X Pro Digital, so the screens that depend on the model show.
+                model = "OCLEANY3PB",
+                firmware = "1.0.2.5",
+                hardware = "HH 0003 0004",
+            ),
+        )
         current?.let { prefs.select(it.id) }
     }
 
@@ -440,6 +479,270 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Debug: writes raw hex commands one by one and reads the settings back; replies go to the log. */
+    private val _watch = MutableStateFlow<BrushWatch?>(null)
+
+    /** The guided brushing screen's view of the brush; null while nothing watches. */
+    val watch: StateFlow<BrushWatch?> = _watch
+    private var watchJob: kotlinx.coroutines.Job? = null
+
+    /**
+     * Connects to the brush on screen and follows its brushing for the guided screen: the guide starts with the motor
+     * and the session is read as soon as the brush has stored it.
+     */
+    fun startWatch() {
+        val info = brush.value ?: return
+        // A watch that saw its record is finishing (it still reads the record): the next one queues behind it.
+        if (watchJob?.isActive == true && _watch.value != BrushWatch.Saved) return
+        _watch.value = BrushWatch.Connecting
+        watchJob = queue.enqueue(info.id, BluetoothQueue.Kind.WRITE) {
+            busyBrush = info.id
+            try {
+                client.watch(info.address, onState = { _watch.value = it }) { step ->
+                    android.util.Log.i("FreeBrushWatch", step)
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _watch.value = BrushWatch.Failed(e.message ?: e.javaClass.simpleName)
+            } finally {
+                busyBrush = null
+            }
+            // Stored: read it right away, the brush is still awake.
+            if (_watch.value == BrushWatch.Saved) syncNow()
+        }
+    }
+
+    fun stopWatch() {
+        watchJob?.cancel()
+        watchJob = null
+        _watch.value = null
+    }
+
+    private val ota by lazy { OcleanOta("FreeBrush/${BuildConfig.VERSION_NAME} (Android ${android.os.Build.VERSION.RELEASE})") }
+    private val _firmware = MutableStateFlow<FirmwareState>(FirmwareState.Idle)
+
+    /** The firmware update of the brush on screen. */
+    val firmware: StateFlow<FirmwareState> = _firmware
+    private var firmwareJob: kotlinx.coroutines.Job? = null
+
+    init {
+        // A prepared file belongs to the brush on screen: switching to another brush or device drops it.
+        viewModelScope.launch {
+            prefs.current.map { it?.id to it?.address }.distinctUntilChanged().drop(1).collect {
+                if (_firmware.value !is FirmwareState.Installing) {
+                    firmwareJob?.cancel()
+                    _firmware.value = FirmwareState.Idle
+                }
+            }
+        }
+    }
+
+    private fun firmwareIdle() = _firmware.value !is FirmwareState.Installing && _firmware.value !is FirmwareState.Working
+
+    /**
+     * Asks Oclean's server for the firmware of the brush on screen (it answers by the brush's MAC). [again] fetches
+     * the newest file even when the brush already runs it, to install it once more.
+     */
+    fun firmwareFromServer(again: Boolean = false) {
+        val info = brush.value ?: return
+        if (!firmwareIdle()) return
+        _firmware.value = FirmwareState.Working("Спрашиваю сервер Oclean…")
+        firmwareJob = viewModelScope.launch {
+            _firmware.value = try {
+                withContext(Dispatchers.IO) {
+                    val current = OcleanOta.serverVersion(info.firmware)
+                    val offer = ota.offer(info.address, info.model.orEmpty(), if (again) "1.0.0.0" else current)
+                    val url = offer.url
+                    val newer = OcleanOta.compareVersions(offer.version, current) > 0
+                    if (url == null && OcleanOta.compareVersions(offer.version, current) < 0) {
+                        // An unknown MAC gets 1.0.0.0 and no file.
+                        FirmwareState.Failed("Сервер Oclean не знает эту щётку: он выдаёт прошивку только щёткам из аккаунта Oclean. Можно поставить файл OTA.bin.")
+                    } else if (url == null || (!again && !newer)) {
+                        FirmwareState.UpToDate(offer.version.takeIf { newer || again }?.ifBlank { null } ?: current)
+                    } else {
+                        _firmware.value = FirmwareState.Working("Загружаю ${offer.version}…")
+                        val fw = GoodixDfu.parseFirmware(ota.download(url))
+                        val label = when (OcleanOta.compareVersions(offer.version, current).coerceIn(-1, 1)) {
+                            1 -> "${offer.version} с сервера Oclean"
+                            0 -> "${offer.version} с сервера Oclean, та же, что стоит"
+                            else -> "${offer.version} с сервера Oclean: старее, чем стоит ($current)"
+                        }
+                        FirmwareState.Ready(info.id, info.address, fw, label, trusted = true)
+                    }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                FirmwareState.Failed(e.message ?: e.javaClass.simpleName)
+            }
+        }
+    }
+
+    /** Loads an OTA.bin the user picked; checks it as far as the file alone allows. */
+    fun firmwareFromFile(uri: Uri) {
+        val info = brush.value ?: return
+        if (!firmwareIdle()) return
+        _firmware.value = FirmwareState.Working("Читаю файл…")
+        firmwareJob = viewModelScope.launch {
+            _firmware.value = try {
+                val (name, bytes) = withContext(Dispatchers.IO) { readFirmwareFile(uri) }
+                FirmwareState.Ready(info.id, info.address, GoodixDfu.parseFirmware(bytes), name, trusted = false)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                FirmwareState.Failed(e.message ?: e.javaClass.simpleName)
+            }
+        }
+    }
+
+    private fun readFirmwareFile(uri: Uri): Pair<String, ByteArray> {
+        val resolver = getApplication<Application>().contentResolver
+        val name = resolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
+            if (it.moveToFirst()) it.getString(0) else null
+        } ?: "файл"
+        val bytes = resolver.openInputStream(uri)?.use { input ->
+            val out = java.io.ByteArrayOutputStream()
+            val chunk = ByteArray(8192)
+            while (true) {
+                val read = input.read(chunk)
+                if (read < 0) break
+                out.write(chunk, 0, read)
+                require(out.size() <= 2 * 1024 * 1024) { "Файл больше 2 МБ: это не прошивка щётки" }
+            }
+            out.toByteArray()
+        } ?: throw IllegalArgumentException("Файл не открылся")
+        return name to bytes
+    }
+
+    /**
+     * Writes the ready firmware to its brush, then waits for the restart and checks by the boot info that the brush
+     * runs it. The user confirmed the risks on screen before this is called.
+     */
+    fun installFirmware() {
+        val ready = _firmware.value as? FirmwareState.Ready ?: return
+        val info = brushes.value.firstOrNull { it.id == ready.brushId && it.address == ready.address }
+        if (info == null) {
+            _firmware.value = FirmwareState.Failed("Щётка сменилась: выбери прошивку заново")
+            return
+        }
+        val total = ready.firmware.bytes.size
+        _firmware.value = FirmwareState.Installing(if (queue.isBusy) "Жду щётку…" else "Подключаюсь…", 0, total)
+        firmwareJob = queue.enqueue(info.id, BluetoothQueue.Kind.WRITE) {
+            busyBrush = info.id
+            val lines = mutableListOf<String>()
+            _log.value = lines.toList()
+            var stage = "Подключаюсь…"
+            var done = 0
+            val onStep: (String) -> Unit = { step ->
+                lines += step
+                _log.value = lines.toList()
+                android.util.Log.i("FreeBrushDfu", step)
+                if (!step.startsWith("←") && !step.startsWith("→")) {
+                    stage = step
+                    _firmware.value = FirmwareState.Installing(stage, done, total)
+                }
+            }
+            var verified: Boolean? = null
+            try {
+                val known = brushes.value.firstOrNull { it.id == info.id }?.firmwareImage
+                val result = client.installFirmware(info.address, ready.firmware, ready.trusted, known, onChip = { chip ->
+                    // Before anything is written: the list that names the image is about to change.
+                    chip.running?.comment?.let { name -> prefs.update(info.id, durable = true) { it.copy(firmwareImage = name) } }
+                }, onProgress = { written, all ->
+                    done = written
+                    _firmware.value = FirmwareState.Installing("Записываю образ…", written, all)
+                }, onStep = onStep)
+                onStep(if (result.answered) "Щётка приняла образ, перезапускается" else "Щётка перезапустилась, не ответив")
+                // The restart takes a few seconds; then the boot info tells which image it runs. The dialog cannot be
+                // closed, so the check gets one budget for all attempts.
+                verified = withTimeoutOrNull(90_000) {
+                    var answer: Boolean? = null
+                    var attempt = 0
+                    while (answer == null) {
+                        delay(if (++attempt == 1) 8_000 else 5_000)
+                        onStep("Проверяю щётку после перезапуска ($attempt)…")
+                        answer = try {
+                            client.verifyFirmware(info.address, ready.firmware, onStep)
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            null
+                        }
+                    }
+                    answer
+                }
+                val same = GoodixDfuUpdate.installed(result.before, ready.firmware)
+                _firmware.value = when (verified) {
+                    true -> FirmwareState.Installed(
+                        if (same) "Прошивка записана заново, щётка работает с ней" else "Прошивка установлена, щётка работает с новым образом",
+                    )
+                    false -> FirmwareState.Failed("Щётка перезапустилась со старым образом: новый не принят. Можно попробовать снова.", ready)
+                    null -> FirmwareState.Installed("Образ записан, но щётка пока не отвечает. Возьми её в руку и синхронизируй через минуту.")
+                }
+            } catch (e: CancellationException) {
+                _firmware.value = FirmwareState.Failed("Остановлено", ready)
+                throw e
+            } catch (e: Exception) {
+                lines += "Ошибка: ${e.message}"
+                _log.value = lines.toList()
+                _firmware.value = FirmwareState.Failed(e.message ?: e.javaClass.simpleName, ready)
+            } finally {
+                busyBrush = null
+            }
+            // The version the brush reports, for the screen.
+            if (verified == true) syncNow()
+        }
+    }
+
+    /** Closes a result or message; a failed install goes back to its file, ready to try again. */
+    fun closeFirmware() {
+        when (val s = _firmware.value) {
+            is FirmwareState.Installing -> return
+            is FirmwareState.Failed -> _firmware.value = s.retry ?: FirmwareState.Idle
+            else -> {
+                firmwareJob?.cancel()
+                _firmware.value = FirmwareState.Idle
+            }
+        }
+    }
+
+    /** Debug: reads the brush's DFU state (chip, boot info, images); writes nothing. */
+    fun dfuInfo() = onBrush("Читаю загрузчик…") { info, onStep ->
+        val state = client.dfuInfo(info.address) { line ->
+            onStep(line)
+            android.util.Log.i("FreeBrushProbe", line)
+        }
+        "Загрузчик: чип ${state.chipId}, образов ${state.images.size}"
+    }
+
+    /**
+     * Debug: checks the firmware file [name] (in the app's external files directory, where adb can push it) against
+     * the brush and logs the plan; writes nothing.
+     */
+    fun dfuPlan(name: String) = onBrush("Проверяю прошивку…") { info, onStep ->
+        val log: (String) -> Unit = { line ->
+            onStep(line)
+            android.util.Log.i("FreeBrushProbe", line)
+        }
+        try {
+            val file = File(getApplication<Application>().getExternalFilesDir(null), name)
+            val plan = client.planFirmware(info.address, GoodixDfu.parseFirmware(file.readBytes()), trusted = false, info.firmwareImage, onStep = log)
+            val list = plan.list?.joinToString { it.comment }?.let { "список станет [$it]" } ?: "список без изменений"
+            "План: $list, запись с 0x%08x, ${plan.firmware.bytes.size} байт".format(plan.start.loadAddress).also(log)
+        } catch (e: Exception) {
+            log("План отклонён: ${e.message}")
+            throw e
+        }
+    }
+
+    /** Debug: holds the connection for [seconds] during a brushing and logs every packet (logcat tag FreeBrushProbe). */
+    fun listen(seconds: Int) = onBrush("Слушаю щётку…") { info, onStep ->
+        client.listen(info.address, seconds) { line ->
+            onStep(line)
+            android.util.Log.i("FreeBrushProbe", line)
+        }
+    }
+
     fun sendRaw(commands: List<String>) = onBrush("Отправка команд…") { info, onStep ->
         val result = client.apply(info.address, commands.map { hex(it) to "→ $it" }, onStep)
         saveSettings(info, result.settings)

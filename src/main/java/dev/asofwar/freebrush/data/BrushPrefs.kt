@@ -36,6 +36,11 @@ data class BrushInfo(
      */
     val growthTotal: Int? = null,
     val lastSyncMillis: Long? = null,
+    /**
+     * Name of the image the brush ran (`Y3L_AS_MBV05`), read from its DFU image list before a firmware install.
+     * The install rewrites that list, so after a broken one only this tells which file fits the brush.
+     */
+    val firmwareImage: String? = null,
 ) {
     val title: String get() = label ?: name ?: "Щётка"
 
@@ -64,6 +69,7 @@ data class BrushInfo(
         put("settings", settingsHex)
         put("growth", growthTotal)
         put("lastSync", lastSyncMillis)
+        put("fwImage", firmwareImage)
     }
 
     companion object {
@@ -88,6 +94,7 @@ data class BrushInfo(
                 settingsHex = str("settings"),
                 growthTotal = if (o.isNull("growth")) null else o.optInt("growth"),
                 lastSyncMillis = if (o.isNull("lastSync")) null else o.optLong("lastSync"),
+                firmwareImage = str("fwImage"),
             )
         }
     }

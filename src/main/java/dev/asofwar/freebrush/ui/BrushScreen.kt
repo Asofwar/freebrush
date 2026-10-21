@@ -43,6 +43,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.asofwar.freebrush.ActionState
 import dev.asofwar.freebrush.AppViewModel
 import dev.asofwar.freebrush.ble.BrushControls
+import dev.asofwar.freebrush.ble.GoodixDfu
 import dev.asofwar.freebrush.ble.hex
 import dev.asofwar.freebrush.SyncState
 import dev.asofwar.freebrush.data.BrushInfo
@@ -113,6 +114,8 @@ fun BrushScreen(vm: AppViewModel, brush: BrushInfo, sync: SyncState, onPair: (Pa
             RowDivider()
             ActionRow(Icons.Trash, "Удалить щётку", MaterialTheme.colorScheme.error) { confirmRemove = true }
         }
+
+        if (GoodixDfu.supports(brush.hardware)) FirmwareCard(vm, brush, Modifier.staggeredEntrance(4))
 
         UpdatesCard(Modifier.staggeredEntrance(4))
 

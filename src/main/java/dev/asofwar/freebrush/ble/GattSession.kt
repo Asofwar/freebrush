@@ -42,6 +42,10 @@ class GattSession(private val context: Context, private val device: BluetoothDev
 
     @Volatile
     var isConnected = false
+
+    /** Negotiated ATT MTU; a write carries at most mtu - 3 bytes. */
+    @Volatile
+    var mtu = 23
         private set
 
     private val _notifications = MutableSharedFlow<Notification>(
@@ -69,6 +73,7 @@ class GattSession(private val context: Context, private val device: BluetoothDev
         }
 
         override fun onMtuChanged(g: BluetoothGatt, mtu: Int, status: Int) {
+            if (status == BluetoothGatt.GATT_SUCCESS) this@GattSession.mtu = mtu
             complete(status, mtu)
         }
 
@@ -162,6 +167,13 @@ class GattSession(private val context: Context, private val device: BluetoothDev
     }
 
     suspend fun requestMtu(mtu: Int): Int = op("mtu") { it.requestMtu(mtu) }
+
+    /** Every (service, characteristic) that can notify or indicate, for experiments that listen to all of them. */
+    fun notifiable(): List<Pair<UUID, UUID>> = gatt?.services.orEmpty().flatMap { svc ->
+        svc.characteristics
+            .filter { it.properties and (BluetoothGattCharacteristic.PROPERTY_NOTIFY or BluetoothGattCharacteristic.PROPERTY_INDICATE) != 0 }
+            .map { svc.uuid to it.uuid }
+    }
 
     fun hasCharacteristic(service: UUID, characteristic: UUID): Boolean =
         gatt?.getService(service)?.getCharacteristic(characteristic) != null
