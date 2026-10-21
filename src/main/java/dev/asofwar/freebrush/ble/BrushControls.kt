@@ -62,13 +62,23 @@ object BrushControls {
     const val FIRST_CUSTOM = 231
 
     /**
+     * Longest programme the brush takes. It accepts a programme in at most two packets of 20 bytes: 9 steps fit
+     * (tested twice on an X Pro Digital), 10 make the second packet 22 bytes and the brush stops answering.
+     * The official app allows 6.
+     */
+    const val MAX_STEPS = 9
+
+    /** Largest packet the brush reliably accepts, whatever MTU was negotiated. */
+    private const val MAX_PACKET = 20
+
+    /**
      * The `0206` programme packet: `02 06 pNum N (enc, gear, seconds) x N 00 05`. enc is 32 for programmes with
      * step prompts ([prompt], the cloud's toastType 1, used by almost all of them), otherwise a code the official
      * app derives from the gear. When the packet does not fit into [mtu] - 3 bytes it is split like the official
      * app does: the first 16 bytes plus `2A 2B`, then `02 0B` and the rest. Each packet is acknowledged separately.
      */
     fun programme(pNum: Int, steps: List<Step>, mtu: Int = 23, prompt: Boolean = true): List<ByteArray> {
-        require(steps.isNotEmpty() && steps.size <= 255)
+        require(steps.size in 1..MAX_STEPS) { "a programme has 1..$MAX_STEPS steps, got ${steps.size}" }
         val body = ArrayList<Byte>()
         body += 0x02; body += 0x06; body += pNum.toByte(); body += steps.size.toByte()
         for (s in steps) {
@@ -77,7 +87,7 @@ object BrushControls {
         }
         body += 0x00; body += 0x05
         val payload = body.toByteArray()
-        if (payload.size <= mtu - 3) return listOf(payload)
+        if (payload.size <= minOf(mtu - 3, MAX_PACKET)) return listOf(payload)
         val first = payload.copyOfRange(0, 16) + byteArrayOf(0x2A, 0x2B)
         val second = byteArrayOf(0x02, 0x0B) + payload.copyOfRange(16, payload.size)
         return listOf(first, second)

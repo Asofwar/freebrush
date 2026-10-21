@@ -188,6 +188,16 @@ class OcleanProtocolTest {
         assertEquals(7, s.language)
     }
 
+    /** After a programme write the brush once dropped the first fragment; the orphan must not be misread. */
+    @Test
+    fun orphanSettingsFragmentIsIgnored() {
+        val asm = OcleanProtocol.SettingsAssembler()
+        assertNull(asm.feed(hex("03021a0a1511132b00011100f000530090070001")))
+        assertNull(asm.feed(hex("030223240c010101000100000c0101e9000200ea")))
+        val s = asm.feed(hex("03021a0a1511133100011100f000530090070001"))!!
+        assertEquals(233, s.schemeId)
+    }
+
     /** X Pro Digital (OCLEANY3PB), 2026-10-21: status reply with battery 43 %. */
     @Test
     fun xProDigitalStatus() {

@@ -49,6 +49,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import dev.asofwar.freebrush.ble.BrushControls
 import dev.asofwar.freebrush.ble.BrushControls.Step
 import dev.asofwar.freebrush.data.Motor
 import dev.asofwar.freebrush.data.Programme
@@ -155,7 +156,7 @@ fun ProgrammesSheet(
                 ) { Text("Создать программу") }
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "Без ограничений официального приложения: до 25 своих программ, 32 уровня чистки, отбеливание, массаж и деликатный режим, шаги от 5 секунд до 4 минут 15 секунд.",
+                    "Без ограничений официального приложения: до 25 своих программ по ${BrushControls.MAX_STEPS} шагов, 32 уровня чистки, отбеливание, массаж и деликатный режим, шаги от 5 секунд до 4 минут 15 секунд.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -224,7 +225,6 @@ private fun ProgrammeRow(p: Programme, active: Boolean, expanded: Boolean, onCli
 private fun ProgrammeEditor(initial: Programme, onDismiss: () -> Unit, onSave: (Programme) -> Unit, onSaveAndSend: (Programme) -> Unit) {
     var name by remember { mutableStateOf(initial.name) }
     val steps = remember { mutableStateListOf<Step>().apply { addAll(initial.steps) } }
-    var confirmLong by remember { mutableStateOf(false) }
     fun result() = Programme(initial.num, name.ifBlank { "Моя программа" }, steps.toList())
 
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
@@ -241,14 +241,18 @@ private fun ProgrammeEditor(initial: Programme, onDismiss: () -> Unit, onSave: (
                 )
                 Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     steps.forEachIndexed { i, s -> StepEditor(i, s, onChange = { steps[i] = it }, onRemove = if (steps.size > 1) ({ steps.removeAt(i) }) else null) }
-                    OutlinedButton(onClick = { steps.add(steps.lastOrNull() ?: Step(16, 30)) }, enabled = steps.size < 16, modifier = Modifier.fillMaxWidth()) {
-                        Text("Добавить шаг")
+                    OutlinedButton(
+                        onClick = { steps.add(steps.lastOrNull() ?: Step(16, 30)) },
+                        enabled = steps.size < BrushControls.MAX_STEPS,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(if (steps.size < BrushControls.MAX_STEPS) "Добавить шаг" else "Щётка принимает до ${BrushControls.MAX_STEPS} шагов")
                     }
                     if (steps.size > 6) {
                         Text(
-                            "Официальное приложение разрешает до 6 шагов; больше — экспериментально, проверь на щётке.",
+                            "Официальное приложение разрешает до 6 шагов, щётка принимает до ${BrushControls.MAX_STEPS}: проверено.",
                             style = MaterialTheme.typography.bodySmall,
-                            color = ScoreAmber,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }
@@ -256,19 +260,10 @@ private fun ProgrammeEditor(initial: Programme, onDismiss: () -> Unit, onSave: (
                     TextButton(onClick = onDismiss) { Text("Отмена") }
                     Spacer(Modifier.weight(1f))
                     OutlinedButton(onClick = { onSave(result()) }) { Text("Сохранить") }
-                    Button(onClick = { if (steps.size > 6) confirmLong = true else onSaveAndSend(result()) }) { Text("Включить") }
+                    Button(onClick = { onSaveAndSend(result()) }) { Text("Включить") }
                 }
             }
         }
-    }
-    if (confirmLong) {
-        AlertDialog(
-            onDismissRequest = { confirmLong = false },
-            confirmButton = { TextButton(onClick = { confirmLong = false; onSaveAndSend(result()) }) { Text("Отправить") } },
-            dismissButton = { TextButton(onClick = { confirmLong = false }) { Text("Отмена") } },
-            title = { Text("Больше 6 шагов") },
-            text = { Text("Официальное приложение так не делает. Если щётка не примет программу, приложение скажет об этом, и ничего не сломается.") },
-        )
     }
 }
 

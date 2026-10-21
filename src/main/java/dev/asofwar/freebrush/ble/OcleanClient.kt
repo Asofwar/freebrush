@@ -116,14 +116,19 @@ class OcleanClient(private val context: Context) {
         }
     }
 
+    /** Reads the settings block, asking a second time if the reply came incomplete. */
     private suspend fun readSettings(s: GattSession, onStep: (String) -> Unit): OcleanProtocol.Settings? {
-        onStep("Чтение настроек…")
-        val asm = OcleanProtocol.SettingsAssembler()
-        var settings: OcleanProtocol.Settings? = null
-        request(s, WRITE, OcleanProtocol.CMD_SETTINGS, onStep) { n ->
-            n.characteristic == NOTIFY && asm.feed(n.value)?.also { settings = it } != null
-        } ?: onStep("Настройки не пришли")
-        return settings
+        repeat(2) { attempt ->
+            onStep(if (attempt == 0) "Чтение настроек…" else "Чтение настроек, ещё раз…")
+            val asm = OcleanProtocol.SettingsAssembler()
+            var settings: OcleanProtocol.Settings? = null
+            request(s, WRITE, OcleanProtocol.CMD_SETTINGS, onStep) { n ->
+                n.characteristic == NOTIFY && asm.feed(n.value)?.also { settings = it } != null
+            }
+            if (settings != null) return settings
+        }
+        onStep("Настройки не пришли")
+        return null
     }
 
     private suspend fun connectWithRetry(

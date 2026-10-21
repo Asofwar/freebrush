@@ -58,7 +58,20 @@ class BrushControlsTest {
         val gears = listOf(16, 16, 24, 16, 16, 37)
         val packets = BrushControls.programme(72, gears.map { Step(it, 30) }, mtu = 23, prompt = false)
         assertEquals(listOf("0206480600101e00101e00181e00101e2a2b", "020b00101e00251e0005"), packets.map { it.toHex() })
-        val single = BrushControls.programme(72, gears.map { Step(it, 30) }, mtu = 123, prompt = false)
-        assertEquals(listOf("0206480600101e00101e00181e00101e00101e00251e0005"), single.map { it.toHex() })
+        // A large MTU does not change the split: the brush takes at most 20 bytes per packet.
+        val big = BrushControls.programme(72, gears.map { Step(it, 30) }, mtu = 247, prompt = false)
+        assertEquals(packets.map { it.toHex() }, big.map { it.toHex() })
+    }
+
+    @Test
+    fun nineStepsFitTwentyBytePackets() {
+        val packets = BrushControls.programme(234, (1..9).map { Step(it * 4, 20) })
+        assertEquals(listOf("0206ea09200414200814200c142010142a2b", "020b201414201814201c142020142024140005"), packets.map { it.toHex() })
+        assertTrue(packets.all { it.size <= 20 })
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun tenStepsAreRefused() {
+        BrushControls.programme(236, (1..10).map { Step(it * 3, 20) })
     }
 }

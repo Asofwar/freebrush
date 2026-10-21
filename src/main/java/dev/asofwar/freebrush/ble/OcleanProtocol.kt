@@ -122,7 +122,9 @@ object OcleanProtocol {
 
     /**
      * Collects the `0302` settings reply. Every notification starts with the `03 02` type; the first one then
-     * carries `'#' L`, where L-2 is the data length. Replies without the `#` marker are taken as unframed data.
+     * carries `'#' L`, where L-2 is the data length. A continuation that arrives without its header (seen right
+     * after a programme write, when the brush dropped the first fragment) is ignored instead of being misread as
+     * the start of the data; a new header always starts over.
      */
     class SettingsAssembler {
         private var buffer: ByteArray? = null
@@ -133,16 +135,14 @@ object OcleanProtocol {
             if (!hasType(packet, TYPE_SETTINGS)) return null
             val body = packet.copyOfRange(2, packet.size)
             val current = buffer
-            if (current == null) {
-                if (body.size >= 2 && body[0] == '#'.code.toByte()) {
-                    expected = body.u8(1) - 2
-                    buffer = body.copyOfRange(2, body.size)
-                } else {
-                    expected = SETTINGS_SIZE
-                    buffer = body
-                }
-            } else {
+            val header = body.size >= 2 && body[0] == '#'.code.toByte() && body.u8(1) - 2 in SETTINGS_SIZE..64
+            if (header) {
+                expected = body.u8(1) - 2
+                buffer = body.copyOfRange(2, body.size)
+            } else if (current != null) {
                 buffer = current + body
+            } else {
+                return null
             }
             val data = buffer!!
             if (data.size < expected || data.size < SETTINGS_SIZE) return null

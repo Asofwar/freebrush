@@ -36,3 +36,7 @@ All notable changes to this project are documented here. The format follows
   the firmware has, including the pressure alert, brush pause and wake-up mode the official app hides; display
   language; brush-head reset and wear limit; the brush's built-in modes, Oclean's programme catalogue and unlimited
   custom programmes with the full range of motor levels. Acks echo the written value on this firmware.
+- Programmes are capped at 9 steps and 20-byte packets: tested on the brush, 8 and 9 steps are accepted every time,
+  10 steps (a 22-byte second packet) get no answer, and a 40-byte packet worked once and hung the brush once.
+- The settings read ignores a continuation fragment that arrives without its header and asks again, after the brush
+  dropped the first fragment once right after a programme write.
