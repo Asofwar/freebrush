@@ -1,8 +1,9 @@
 # FreeBrush
 
-An open-source Android app for Oclean smart toothbrushes that works fully offline.
-It talks to the brush directly over Bluetooth Low Energy. You need no account and no cloud, and the
-app has no internet permission at all.
+An open-source Android app for Oclean smart toothbrushes that works offline.
+It talks to the brush directly over Bluetooth Low Energy. You need no account and no cloud, and your
+brushing data never leaves the phone. The only time the app goes online is a daily check for its own
+updates on GitHub, which you can turn off.
 
 > **Status: early alpha.** Syncing works on a real **Oclean X Pro Digital** (`OCLEANY3PB`,
 > firmware 1.0.2.5). Other models that share the same Bluetooth protocol may work, but nobody has
@@ -24,7 +25,7 @@ that is needed. FreeBrush reads the data straight from the brush and keeps it on
 | Brushing history: score, duration, zones, pressure¹ | ✅ on the phone | ✅ in the cloud |
 | Brush-head counters (days, sessions, wear) | ✅ | ✅ |
 | Works without an account | ✅ | ❌ |
-| Internet access | none (no `INTERNET` permission) | required |
+| Internet access | only the update check, can be turned off | required |
 | Ads / splash banners | none | server-driven banner |
 | Streaks, two-week chart, daily goal | ✅ | partly |
 | 3D jaw model you can rotate and tap for per-zone stats | ✅ | flat diagram |
@@ -55,9 +56,12 @@ with the sync log from the **Brush** tab.
 
 ## Install
 
-Grab the APK from [Releases](../../releases) once the first one is published, or build it yourself.
+Download `FreeBrush-<version>.apk` from [Releases](../../releases/latest) and open it on the phone,
+or build it yourself. Requires Android 12 or newer and Bluetooth LE.
 
-Requires Android 12 or newer and Bluetooth LE.
+FreeBrush updates itself: once a day it asks GitHub for the latest release and offers it in a dialog.
+The first update asks you to allow installs from FreeBrush; after that Android installs updates without
+another prompt. Turn the check off under **Brush → Updates**, or check by hand there.
 
 **Close the official Oclean app before syncing.** The brush accepts only one connection at a time.
 The official app also appears to clear the brush's session buffer when it syncs, so sessions that
@@ -74,9 +78,21 @@ JDK 17+ and the Android SDK (compile SDK 37) are needed.
 
 The APK lands in `build/outputs/apk/debug/`.
 
+### Releases
+
+The version lives in `version.properties`. Raising it on `main`, together with a `## [X.Y.Z]` section in
+`CHANGELOG.md`, is the whole release: the [Release](.github/workflows/release.yml) workflow tags `vX.Y.Z`,
+builds the APK signed with the release key from the repository secrets and publishes it with its SHA-256.
+Builds between releases are named `X.Y.Z-dev+<commit>`.
+
 ## Privacy
 
-- The only permissions are `BLUETOOTH_SCAN` (flagged `neverForLocation`) and `BLUETOOTH_CONNECT`.
+- Bluetooth permissions: `BLUETOOTH_SCAN` (flagged `neverForLocation`) and `BLUETOOTH_CONNECT`.
+- Update permissions: `INTERNET` for the update check and download, `REQUEST_INSTALL_PACKAGES` and
+  `UPDATE_PACKAGES_WITHOUT_USER_ACTION` to install the update. The check is one request to
+  `api.github.com` for this repository's latest release; GitHub sees your IP address and the app
+  version, nothing else is sent. The APK comes from GitHub's release downloads and must match the
+  published SHA-256. With the check turned off, the app makes no network requests at all.
 - Brushing history is stored in the app's private storage (`sessions.json`) and leaves the phone
   only when you export it yourself.
 - No analytics, no crash reporting, no third-party SDKs besides AndroidX and Jetpack Compose.
@@ -111,9 +127,10 @@ which devices the app works with. Use the app at your own risk. It never writes 
 
 ## По-русски
 
-FreeBrush — открытое Android-приложение для умных щёток Oclean. Оно работает без интернета, аккаунта
-и облака: забирает данные со щётки по Bluetooth и хранит их только на телефоне. Разрешения на интернет
-у приложения нет.
+FreeBrush — открытое Android-приложение для умных щёток Oclean. Оно работает без аккаунта и облака:
+забирает данные со щётки по Bluetooth и хранит их только на телефоне. В интернет приложение ходит только
+за своими обновлениями: раз в день спрашивает GitHub, нет ли новой версии. Это выключается в
+**Щётка → Обновления**.
 
 **Статус: ранняя альфа.** Синхронизация проверена на реальной **Oclean X Pro Digital** (`OCLEANY3PB`,
 прошивка 1.0.2.5). Другие модели с тем же протоколом могут работать, но не проверены.
@@ -126,7 +143,10 @@ FreeBrush — открытое Android-приложение для умных щ
 - Серия дней подряд, график за две недели, цель — две чистки в день.
 - Экспорт истории в CSV.
 
-**В планах:** настройки щётки (оповещение о нажиме, язык, счётчик насадки), режимы и свои программы.
+- Настройки щётки, включая скрытые в официальном приложении: оповещение о нажиме, язык экрана,
+  счётчик насадки; встроенные режимы, каталог программ Oclean и свои программы до 9 шагов.
+- Уровень роста на экране щётки растёт по настоящим чисткам.
+- Обновляется сама: APK берётся из [релизов](../../releases/latest) на GitHub.
 
 **Чего не будет:** обновления прошивки (файлы лежат на серверах Oclean), семейные аккаунты, «экспертные»
 отчёты, AI-чат.

@@ -114,6 +114,8 @@ fun BrushScreen(vm: AppViewModel, brush: BrushInfo, sync: SyncState) {
             if (BrushControls.hasGrowth(brush.hardware)) InfoRow("Очки роста (уровень на экране щётки)", brush.growthTotal.toString())
         }
 
+        UpdatesCard(Modifier.staggeredEntrance(6))
+
         if (log.isNotEmpty()) SyncLog(log, Modifier.staggeredEntrance(6))
         Spacer(Modifier.height(8.dp))
     }

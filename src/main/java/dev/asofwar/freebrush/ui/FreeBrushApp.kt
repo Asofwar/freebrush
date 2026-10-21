@@ -71,6 +71,7 @@ fun FreeBrushApp(vm: AppViewModel) {
             else -> brush?.let { MainScreen(vm, it) }
         }
     }
+    UpdateDialog()
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

@@ -10,7 +10,8 @@ Thanks for helping. The most useful contributions right now are:
 
 ## Ground rules
 
-- The app must keep working fully offline: do not add the `INTERNET` permission, analytics or third-party SDKs.
+- The app must keep working offline. The only network access is the update check against this repository's
+  GitHub Releases, which the user can turn off; do not add analytics, crash reporting or third-party SDKs.
 - Do not contribute code copied from the official Oclean app or its decompiled sources. Describe observed
   protocol behaviour in your own words and code.
 - Write commands that change brush settings must be confirmed on a real device before they are enabled
@@ -21,6 +22,9 @@ Thanks for helping. The most useful contributions right now are:
 ```bash
 ./gradlew assembleDebug testDebugUnitTest
 ```
+
+To release, raise `versionName` in `version.properties` and move the `[Unreleased]` notes of `CHANGELOG.md`
+into a `## [X.Y.Z] - YYYY-MM-DD` section in the same commit. The Release workflow publishes it once it is on `main`.
 
 Kotlin code follows the official Kotlin style. UI text is in Russian for now; English localisation is welcome.
 

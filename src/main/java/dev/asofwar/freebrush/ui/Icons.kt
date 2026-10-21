@@ -44,6 +44,7 @@ object Icons {
     val Trash = line("trash", "M4,7h16", "M9.5,7v-3h5v3", "M6,7l1,13.5h10l1,-13.5")
     val Swap = line("swap", "M7,4l-3,3l3,3", "M4,7h13", "M17,14l3,3l-3,3", "M20,17h-13")
     val Bluetooth = line("bluetooth", "M7,7.5l10,9l-5,4.5v-18l5,4.5l-10,9")
+    val Download = line("download", "M12,3.5v11", "M7.5,10l4.5,4.5l4.5,-4.5", "M5,19.5h14")
     val Chevron = line("chevron", "M6,9l6,6l6,-6")
     val Battery = line("battery", "M3.5,8h14a1.5,1.5 0,0 1,1.5 1.5v5a1.5,1.5 0,0 1,-1.5 1.5h-14a1.5,1.5 0,0 1,-1.5 -1.5v-5a1.5,1.5 0,0 1,1.5 -1.5z", "M21.5,11v2")
 }

@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-21
+
 ### Added
 
 - Project skeleton: brush discovery, Today / History / Brush screens, local JSON history,
@@ -43,3 +45,8 @@ All notable changes to this project are documented here. The format follows
 - Growth level on the brush screen (bronze, silver, gold...): each sync reads the brush's new growth points (`0308`),
   adds them to the total and writes it back as the base (`0226`), as the official app was meant to but never did.
   Tested: base 100 turned "bronze 1" into "gold 2".
+- In-app updates from GitHub Releases: a daily check (it can be turned off under Brush → Updates), a dialog with
+  the release notes, the APK download checked against the published SHA-256, and the install through Android's
+  package installer, without a prompt once FreeBrush has installed itself.
+- Releases are automatic: raising the version in `version.properties` on `main` tags it and publishes the APK
+  signed with the release key. Builds between releases are named `X.Y.Z-dev+<commit>`.

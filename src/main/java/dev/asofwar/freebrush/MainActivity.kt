@@ -9,6 +9,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import dev.asofwar.freebrush.ui.FreeBrushApp
 import dev.asofwar.freebrush.ui.FreeBrushTheme
+import dev.asofwar.freebrush.update.Updater
 
 class MainActivity : ComponentActivity() {
     private val vm: AppViewModel by viewModels()
@@ -22,6 +23,11 @@ class MainActivity : ComponentActivity() {
         handleDebugIntent(intent)
     }
 
+    override fun onStart() {
+        super.onStart()
+        Updater.get(this).autoCheck()
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         handleDebugIntent(intent)
@@ -29,13 +35,15 @@ class MainActivity : ComponentActivity() {
 
     /**
      * Debug builds only, driven over adb (`am start -S -n dev.asofwar.freebrush/.MainActivity --es ...`):
-     * `probe settings` runs the settings probe; `send 020900,030201` writes raw commands and logs the replies.
+     * `probe settings` runs the settings probe; `send 020900,030201` writes raw commands and logs the replies;
+     * `update check` checks GitHub for a release now.
      */
     private fun handleDebugIntent(intent: Intent?) {
         if (!BuildConfig.DEBUG || intent == null) return
         if (intent.getStringExtra("probe") == "settings") vm.runProbe()
         intent.getStringExtra("send")?.let { list -> vm.sendRaw(list.split(',').map { it.trim() }.filter { it.isNotEmpty() }) }
         intent.getStringExtra("growth")?.toIntOrNull()?.let { vm.setGrowthTotal(it) }
+        if (intent.getStringExtra("update") == "check") Updater.get(this).check()
         // `prog 231|2:30,16:30` sends programme 231 with gear:seconds steps.
         intent.getStringExtra("prog")?.let { spec ->
             val (num, steps) = spec.split('|')
