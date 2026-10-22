@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-10-22
+
 ### Changed
 
 - Growth points: every brushing of at least 2 minutes now adds 1 point, on top of the points the brush gives itself.
