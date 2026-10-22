@@ -58,8 +58,13 @@ class OcleanClient(private val context: Context) {
      * the rest of the sync finishes: from then on the brush counts from zero, so the caller must store it even if the
      * sync is cancelled or fails afterwards.
      */
-    suspend fun sync(address: String, growthTotal: Int?, onGrowth: (Int) -> Unit, onStep: (String) -> Unit): SyncResult =
-        withBrush(address, onStep) { s -> exchange(s, growthTotal, onGrowth, onStep) }
+    suspend fun sync(
+        address: String,
+        growthTotal: Int?,
+        countedUntil: Long,
+        onGrowth: (total: Int, countedUntil: Long) -> Unit,
+        onStep: (String) -> Unit,
+    ): SyncResult = withBrush(address, onStep) { s -> exchange(s, growthTotal, countedUntil, onGrowth, onStep) }
 
     /** A connected brush, for writing settings: one command in flight at a time, as the brush expects. */
     inner class Link internal constructor(private val s: GattSession, private val onStep: (String) -> Unit) {
@@ -300,7 +305,13 @@ class OcleanClient(private val context: Context) {
         )
     }
 
-    private suspend fun exchange(s: GattSession, growthTotal: Int?, onGrowth: (Int) -> Unit, onStep: (String) -> Unit): SyncResult = coroutineScope {
+    private suspend fun exchange(
+        s: GattSession,
+        growthTotal: Int?,
+        countedUntil: Long,
+        onGrowth: (total: Int, countedUntil: Long) -> Unit,
+        onStep: (String) -> Unit,
+    ): SyncResult = coroutineScope {
         // Log every notification: the log is what users attach to device reports.
         val logger = launchLogger(s, onStep)
 
@@ -333,7 +344,10 @@ class OcleanClient(private val context: Context) {
             !BrushControls.hasGrowth(hardware) -> null
             // A brush added to the app keeps its own level: its base is unknown, and writing one would reset it.
             growthTotal == null -> null.also { onStep("Очки роста: уровень ведёт сама щётка") }
-            else -> syncGrowth(growthLink(s, onStep), growthTotal, onGrowth, onStep)
+            else -> {
+                val app = AppPoints.of(sessions, countedUntil, now.toEpochSecond())
+                syncGrowth(growthLink(s, onStep), growthTotal, app, onGrowth, onStep)
+            }
         }
         onStep("Готово: заряд ${battery ?: "?"} %, чисток в щётке ${sessions.size}")
 

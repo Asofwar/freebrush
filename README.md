@@ -36,7 +36,7 @@ that is needed. FreeBrush reads the data straight from the brush and keeps it on
 | Export to CSV | ✅ | ❌ |
 | Brush settings: zone reminder, raise-to-wake, day/evening mode, side-motion warning, display language, brush-head reset and limit | ✅ | ✅ |
 | Settings the official app hides on this brush: pressure alert, brush pause, wake-up mode | ✅ | ❌ |
-| Growth level on the brush screen actually grows with brushing | ✅ | ❌ stays at level 1 |
+| Growth level on the brush screen actually grows with brushing | ✅ +1 for every brushing of 2 minutes, plus the brush's own points | ❌ stays at level 1 |
 | Brushing programmes: the brush's built-in modes (incl. the hidden day/evening ones), Oclean's catalogue | ✅ | ✅ |
 | Custom programmes | ✅ up to 25, up to 9 steps, 32 cleaning levels + whitening, massage, sensitive, 5–255 s steps | 3 programmes, 6 steps, 4 levels per mode |
 | Firmware updates | ✅ X Pro Digital: from Oclean's server on your tap or from an `OTA.bin` file, checked against the brush before anything is written | ✅ |
@@ -158,7 +158,8 @@ FreeBrush — открытое Android-приложение для умных щ
 
 - Настройки щётки, включая скрытые в официальном приложении: оповещение о нажиме, язык экрана,
   счётчик насадки; встроенные режимы, каталог программ Oclean и свои программы до 9 шагов.
-- Уровень роста на экране щётки растёт по настоящим чисткам.
+- Уровень роста на экране щётки растёт по настоящим чисткам: +1 очко за каждую чистку от 2 минут плюс очки,
+  которые щётка даёт сама.
 - Несколько щёток на одном телефоне, по одной на человека: у каждой своё имя, история, статистика и уровень,
   переключаются чипами сверху. «Заменить на новую щётку» переносит историю и уровень человека на его новую щётку.
 - Чистка с подсказками: 3D-челюсть ведёт по зонам с отсчётом, вибрацией, звуком и голосом, слабым зонам даёт

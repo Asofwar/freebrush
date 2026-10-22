@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Growth points: every brushing of at least 2 minutes now adds 1 point, on top of the points the brush gives itself.
+  The brush's own rule leaves most brushings out (2.5 and 3.5 minutes with scores of 76 and 82 earned nothing), so
+  the level hardly moved. Brushings count from the day the update first syncs; a brush whose level the brush keeps
+  itself is left as it is.
+
 ## [0.3.0] - 2026-10-21
 
 ### Added

@@ -35,6 +35,8 @@ data class BrushInfo(
      * written, which keeps the level a reinstall or a second phone would otherwise reset.
      */
     val growthTotal: Int? = null,
+    /** Start (epoch seconds) of the last brushing FreeBrush gave its own growth point for, see AppPoints. */
+    val growthCountedUntil: Long? = null,
     val lastSyncMillis: Long? = null,
     /**
      * Name of the image the brush ran (`Y3L_AS_MBV05`), read from its DFU image list before a firmware install.
@@ -51,6 +53,7 @@ data class BrushInfo(
         label = label,
         name = name,
         growthTotal = growthTotal,
+        growthCountedUntil = growthCountedUntil,
     )
 
     fun toJson(): JSONObject = JSONObject().apply {
@@ -68,6 +71,7 @@ data class BrushInfo(
         put("headWearMax", headWearMax)
         put("settings", settingsHex)
         put("growth", growthTotal)
+        put("growthUntil", growthCountedUntil)
         put("lastSync", lastSyncMillis)
         put("fwImage", firmwareImage)
     }
@@ -93,6 +97,7 @@ data class BrushInfo(
                 headWearMax = int("headWearMax"),
                 settingsHex = str("settings"),
                 growthTotal = if (o.isNull("growth")) null else o.optInt("growth"),
+                growthCountedUntil = if (o.isNull("growthUntil")) null else o.optLong("growthUntil"),
                 lastSyncMillis = if (o.isNull("lastSync")) null else o.optLong("lastSync"),
                 firmwareImage = str("fwImage"),
             )

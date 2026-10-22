@@ -126,6 +126,13 @@ fun BrushScreen(vm: AppViewModel, brush: BrushInfo, sync: SyncState, onPair: (Pa
             InfoRow("Адрес", brush.address)
             if (BrushControls.hasGrowth(brush.hardware)) {
                 InfoRow("Очки роста (уровень на экране щётки)", brush.growthTotal?.toString() ?: "ведёт сама щётка")
+                if (brush.growthTotal != null) {
+                    Text(
+                        "+1 за каждую чистку от 2 минут и очки, которые щётка даёт сама",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
 

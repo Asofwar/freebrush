@@ -268,10 +268,15 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private suspend fun syncOne(info: BrushInfo, prefix: String, lines: MutableList<String>): Int {
+        // FreeBrush's own growth points start with the day they came in; the mark is stored at once, so a first sync
+        // on a later day still counts that day's brushings.
+        val countedUntil = info.growthCountedUntil ?: java.time.LocalDate.now().atStartOfDay(java.time.ZoneId.systemDefault())
+            .toEpochSecond().also { mark -> prefs.update(info.id, durable = true) { it.copy(growthCountedUntil = it.growthCountedUntil ?: mark) } }
         val result = client.sync(
             info.address,
             info.growthTotal,
-            onGrowth = { total -> prefs.update(info.id, durable = true) { it.copy(growthTotal = total) } },
+            countedUntil,
+            onGrowth = { total, until -> prefs.update(info.id, durable = true) { it.copy(growthTotal = total, growthCountedUntil = until) } },
         ) { step ->
             lines += prefix + step
             _log.value = lines.toList()
